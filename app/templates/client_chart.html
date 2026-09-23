@@ -357,56 +357,117 @@
             {%- if ch.icd10 %} &middot; {{ ch.icd10 }}{% endif %}
             &middot; {{ ch.service_on.strftime('%d %b %Y') }}</span></span>
           <span style="font-variant-numeric:tabular-nums">
-            {{ '%.2f' | format(ch.amount|float) }}
-            <span class="src-tag {{ 'synced' if ch.status.value == 'paid' else 'typed' }}"
-              >{{ ch.status.value.replace('_', ' ') }}</span>
+            {{ '%.2f'|format(ch.amount|float) }}
+            {% if ch.outstanding > 0.005 %}
+            <span class="src-tag" style="background:var(--bad-soft);color:var(--bad)"
+              >{{ '%.2f'|format(ch.outstanding) }} owed</span>
+            {% else %}<span class="src-tag synced">settled</span>{% endif %}
           </span>
         </div>
-        {% if can(user, P.BILLING_EDIT) and ch.status.value in ('draft', 'ready', 'submitted') %}
-        <form class="inline" method="post" action="/charges/{{ ch.id }}/status"
-              style="margin:0 0 9px 4px">
-          <select name="status" style="width:150px">
-            <option value="ready">ready</option>
-            <option value="submitted">submitted</option>
-            <option value="paid">paid</option>
-            <option value="denied">denied</option>
-            <option value="written_off">written off</option>
+
+        {% for cl in ch.claims %}
+        <div class="hint" style="margin:0 0 6px 14px">
+          Claim{{ ' ' ~ cl.claim_number if cl.claim_number }} &middot;
+          {{ cl.payer or 'no payer' }} &middot;
+          <b>{{ cl.status.value }}</b>
+          {%- if cl.replaces_id %} &middot; replaces #{{ cl.replaces_id }}{% endif %}
+          {%- if cl.denial_reason %}<br><span style="color:var(--bad)">{{ cl.outcome }}
+            &mdash; {{ cl.denial_reason }}</span>{% endif %}
+        </div>
+        {% if can(user, P.BILLING_EDIT) and cl.status.value not in ('paid', 'closed') %}
+        <form method="post" action="/claims/{{ cl.id }}/status"
+              style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 11px 14px">
+          <select name="status" style="width:135px">
+            {% for s in ['submitted','accepted','rejected','denied','paid','appealed','closed'] %}
+            <option value="{{ s }}" {{ 'selected' if s == cl.status.value }}>{{ s }}</option>
+            {% endfor %}
           </select>
-          <input type="text" name="paid" placeholder="paid amt" style="width:100px">
-          <button class="btn btn-sm">Update</button>
+          <input type="text" name="allowed" placeholder="allowed" style="width:90px">
+          <input type="text" name="paid" placeholder="paid" style="width:90px">
+          <input type="text" name="adjustment" placeholder="adjust" style="width:90px">
+          <input type="text" name="denial_code" placeholder="code" style="width:80px">
+          <input type="text" name="denial_reason" placeholder="reason"
+                 style="flex:1;min-width:140px">
+          <button class="btn btn-sm">Record</button>
+        </form>
+        {% endif %}
+        {% endfor %}
+
+        {% if can(user, P.BILLING_EDIT) %}
+        <form method="post" action="/charges/{{ ch.id }}/claims"
+              style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 13px 14px">
+          <input type="text" name="payer" placeholder="Payer"
+                 value="{{ ch.payer }}" style="flex:1;min-width:140px">
+          <input type="text" name="claim_number" placeholder="Claim no." style="width:120px">
+          {% if ch.open_claim and ch.open_claim.needs_work %}
+          <input type="hidden" name="replaces_id" value="{{ ch.open_claim.id }}">
+          <button class="btn btn-sm btn-green">Correct and resend</button>
+          {% else %}
+          <button class="btn btn-sm">Prepare a claim</button>
+          {% endif %}
         </form>
         {% endif %}
         {% else %}
         <p class="hint">Nothing billed yet.</p>
         {% endfor %}
 
+        {% if payments %}
+        <div style="border-top:1px solid var(--rule);margin-top:13px;padding-top:11px">
+          <b style="font-size:14px">Payments and adjustments</b>
+          {% for p in payments %}
+          <div class="line"><span>
+            <b style="font-variant-numeric:tabular-nums">{{ '%.2f'|format(p.amount|float) }}</b>
+            <span class="hint">&middot; {{ p.source.value }}
+              {%- if p.method %} &middot; {{ p.method }}{% endif %}
+              &middot; {{ p.received_on.strftime('%d %b %Y') }}
+              {%- if p.reference %} &middot; ref {{ p.reference }}{% endif %}
+              {%- if p.posted_by %} &middot; {{ p.posted_by }}{% endif %}</span></span>
+            {% if can(user, P.BILLING_EDIT) %}
+            <form class="inline" method="post" action="/payments/{{ p.id }}/delete"
+                  onsubmit="return confirm('Remove this payment? The audit log keeps a record.')">
+              <button class="btn btn-sm">Remove</button></form>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
         {% if can(user, P.BILLING_EDIT) %}
         <details style="margin-top:13px;border-top:1px solid var(--rule);padding-top:12px">
           <summary style="cursor:pointer;font-weight:600;font-size:14.5px">
-            &#10010; Add a charge</summary>
-          <form method="post" action="/clients/{{ client.id }}/charges"
+            &#10010; Record a payment or adjustment</summary>
+          <form method="post" action="/clients/{{ client.id }}/payments"
                 style="display:grid;gap:9px;margin-top:11px">
             <div style="display:flex;gap:9px;flex-wrap:wrap">
-              <input type="text" name="cpt" placeholder="CPT" required list="cpts"
-                     style="width:110px">
-              <datalist id="cpts">
-                {% for code, desc in COMMON_CPT %}
-                <option value="{{ code }}">{{ code }} - {{ desc }}</option>
-                {% endfor %}
-              </datalist>
-              <input type="text" name="description" placeholder="Description"
-                     style="flex:2;min-width:180px">
-              <input type="text" name="amount" inputmode="decimal" placeholder="Amount"
-                     style="width:110px">
+              <input type="text" name="amount" inputmode="decimal"
+                     placeholder="Amount (required)" required style="width:130px">
+              <select name="source" style="width:140px">
+                <option value="patient">from the patient</option>
+                <option value="payer">from the payer</option>
+                <option value="adjustment">adjustment</option>
+              </select>
+              <select name="method" style="flex:1;min-width:150px">
+                <option value="">method</option>
+                {% for m in pay_methods %}<option>{{ m }}</option>{% endfor %}
+              </select>
             </div>
             <div style="display:flex;gap:9px;flex-wrap:wrap">
-              <input type="text" name="icd10" placeholder="ICD-10 codes, comma separated"
-                     style="flex:1;min-width:180px">
-              <input type="text" name="payer" placeholder="Payer" style="flex:1;min-width:140px">
-              <input type="text" name="units" value="1" style="width:70px">
+              <select name="charge_id" style="flex:1;min-width:170px">
+                <option value="">— not applied to a charge —</option>
+                {% for ch in charges %}
+                <option value="{{ ch.id }}">{{ ch.cpt }} ·
+                  {{ ch.service_on.strftime('%d %b %Y') }} ·
+                  {{ '%.2f'|format(ch.outstanding) }} owed</option>
+                {% endfor %}
+              </select>
+              <input type="date" name="received_on" style="width:160px">
+              <input type="text" name="reference" placeholder="Reference" style="width:140px">
             </div>
-            <button class="btn btn-sm btn-green" style="justify-self:start">Add charge</button>
+            <button class="btn btn-sm btn-green" style="justify-self:start">Record it</button>
           </form>
+          <p class="hint" style="margin:9px 0 0">
+            A payment need not be attached to a charge &mdash; somebody pays at
+            the desk before the visit is coded, and that is still money received.</p>
         </details>
         {% endif %}
       </section>

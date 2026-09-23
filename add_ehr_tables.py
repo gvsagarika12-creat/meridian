@@ -17,7 +17,7 @@ import sys
 import sqlalchemy as sa
 
 TABLES = ("encounters", "encounter_addenda", "prescriptions", "orders",
-          "charges", "documents")
+          "charges", "documents", "insurance_claims", "payments")
 
 
 def normalise(url: str) -> str:

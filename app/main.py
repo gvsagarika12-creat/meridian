@@ -1230,7 +1230,12 @@ def client_chart(client_id: int, request: Request, db: Session = Depends(get_db)
         orders=(db.query(ehr.Order).filter_by(client_id=client.id)
                 .order_by(ehr.Order.id.desc()).all()),
         charges=(db.query(ehr.Charge).filter_by(client_id=client.id)
+                 .options(selectinload(ehr.Charge.payments),
+                          selectinload(ehr.Charge.claims))
                  .order_by(ehr.Charge.id.desc()).all()),
+        payments=(db.query(ehr.Payment).filter_by(client_id=client.id)
+                  .order_by(ehr.Payment.id.desc()).all()),
+        pay_methods=ehr.METHODS,
         documents=(db.query(documents.Document).filter_by(client_id=client.id)
                    .order_by(documents.Document.uploaded_at.desc()).all()),
         doc_labels=documents.LABELS,
@@ -3058,3 +3063,223 @@ def document_delete(doc_id: int, request: Request,
     db.commit()
     request.session["document_note"] = f"{name} was deleted."
     return RedirectResponse("/documents", status_code=303)
+
+
+# -------------------------------------------------------------------- billing
+#
+# Claims and payments. Nothing transmits: a claim reaches a payer through a
+# clearinghouse contract, which is a procurement step. What this does is track
+# what was sent, what came back, and what is still owed - which is the part a
+# biller reconciles against a bank statement.
+
+
+def _money(raw: str) -> Decimal:
+    try:
+        return Decimal((raw or "0").strip() or "0")
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+@app.post("/charges/{charge_id}/claims")
+def claim_new(charge_id: int, request: Request, payer: str = F(""),
+              claim_number: str = F(""), replaces_id: str = F(""),
+              db: Session = Depends(get_db),
+              _=Depends(needs(perms.BILLING_EDIT))):
+    """Prepare a claim for this charge.
+
+    `replaces` carries the correction chain: a rejected claim is fixed and
+    resent, and the replacement points back at the original so the history
+    reads as one story rather than three unrelated rows.
+    """
+    charge = get_or_404(db, ehr.Charge, charge_id)
+    me = auth.current_user(request, db)
+    previous = db.get(ehr.Claim, _int_or_none(replaces_id) or 0)
+
+    claim = ehr.Claim(
+        charge_id=charge.id, client_id=charge.client_id,
+        payer=(payer.strip() or charge.payer or "")[:160],
+        claim_number=claim_number.strip()[:64],
+        billed=charge.amount or 0,
+        replaces_id=previous.id if previous else None,
+        created_by=(me.name if me else "")[:160])
+    db.add(claim)
+    db.flush()
+    log(db, f"Claim prepared for charge {charge.cpt}", "claim", claim.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = (
+        f"Claim prepared for {charge.cpt}."
+        + (" It replaces the earlier one." if previous else "")
+        + " Nothing has been sent - hand it to whoever files claims.")
+    return RedirectResponse(f"/clients/{charge.client_id}#billing", status_code=303)
+
+
+@app.post("/claims/{claim_id}/status")
+def claim_status(claim_id: int, request: Request, status: str = F(""),
+                 allowed: str = F(""), paid: str = F(""),
+                 patient_responsibility: str = F(""), adjustment: str = F(""),
+                 denial_code: str = F(""), denial_reason: str = F(""),
+                 db: Session = Depends(get_db),
+                 _=Depends(needs(perms.BILLING_EDIT))):
+    """Record what the payer said.
+
+    Rejected and denied are kept apart deliberately - one is a format problem
+    to correct and resend, the other a coverage decision to appeal or write
+    off. A practice that treats them alike appeals format errors and resends
+    coverage decisions, and does neither well.
+    """
+    claim = get_or_404(db, ehr.Claim, claim_id)
+    me = auth.current_user(request, db)
+    try:
+        claim.status = ehr.ClaimStatus(status)
+    except ValueError:
+        return RedirectResponse(f"/clients/{claim.client_id}#billing",
+                                status_code=303)
+
+    if claim.status == ehr.ClaimStatus.submitted and not claim.submitted_on:
+        claim.submitted_on = date.today()
+    if claim.status in (ehr.ClaimStatus.paid, ehr.ClaimStatus.denied,
+                        ehr.ClaimStatus.rejected, ehr.ClaimStatus.accepted):
+        claim.responded_on = date.today()
+
+    for field, raw in (("allowed", allowed), ("paid", paid),
+                       ("patient_responsibility", patient_responsibility),
+                       ("adjustment", adjustment)):
+        if (raw or "").strip():
+            setattr(claim, field, _money(raw))
+    if denial_code.strip():
+        claim.denial_code = denial_code.strip()[:32]
+    if denial_reason.strip():
+        claim.denial_reason = denial_reason.strip()[:255]
+
+    #  A paid claim posts its payment automatically, once. Asking a biller to
+    #  record the same figure twice is how the claim and the ledger drift
+    #  apart, and the drift is only ever found at reconciliation.
+    if claim.status == ehr.ClaimStatus.paid and float(claim.paid or 0) > 0:
+        already = (db.query(ehr.Payment)
+                   .filter_by(claim_id=claim.id,
+                              source=ehr.PaymentSource.payer).first())
+        if already is None:
+            db.add(ehr.Payment(
+                client_id=claim.client_id, charge_id=claim.charge_id,
+                claim_id=claim.id, amount=claim.paid,
+                source=ehr.PaymentSource.payer, method="Insurance payment",
+                reference=claim.claim_number,
+                note=f"Posted automatically from claim {claim.id}",
+                posted_by=(me.name if me else "")[:160]))
+        if float(claim.adjustment or 0) > 0:
+            seen = (db.query(ehr.Payment)
+                    .filter_by(claim_id=claim.id,
+                               source=ehr.PaymentSource.adjustment).first())
+            if seen is None:
+                db.add(ehr.Payment(
+                    client_id=claim.client_id, charge_id=claim.charge_id,
+                    claim_id=claim.id, amount=claim.adjustment,
+                    source=ehr.PaymentSource.adjustment,
+                    method="Contractual adjustment",
+                    note="Contractual - not billable to the patient",
+                    posted_by=(me.name if me else "")[:160]))
+
+    log(db, f"Claim {claim.id} -> {claim.status.value}", "claim", claim.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    return RedirectResponse(f"/clients/{claim.client_id}#billing", status_code=303)
+
+
+@app.post("/clients/{client_id}/payments")
+def payment_new(client_id: int, request: Request, amount: str = F(""),
+                source: str = F("patient"), method: str = F(""),
+                reference: str = F(""), received_on: str = F(""),
+                charge_id: str = F(""), note: str = F(""),
+                db: Session = Depends(get_db),
+                _=Depends(needs(perms.BILLING_EDIT))):
+    """Record money received, or an adjustment.
+
+    The charge is optional: somebody pays at the desk before the visit is
+    coded, and refusing to record that until there is a charge to attach it to
+    means it does not get recorded at all.
+    """
+    client = get_or_404(db, Client, client_id)
+    me = auth.current_user(request, db)
+    value = _money(amount)
+    if value == 0:
+        request.session["chart_error"] = "A payment needs an amount."
+        return RedirectResponse(f"/clients/{client_id}#billing", status_code=303)
+    try:
+        kind = ehr.PaymentSource(source)
+    except ValueError:
+        kind = ehr.PaymentSource.patient
+
+    payment = ehr.Payment(
+        client_id=client.id, charge_id=_int_or_none(charge_id),
+        amount=value, source=kind, method=method.strip()[:32],
+        reference=reference.strip()[:120],
+        received_on=_date_or_none(received_on) or date.today(),
+        note=note.strip()[:255], posted_by=(me.name if me else "")[:160])
+    db.add(payment)
+    db.flush()
+    log(db, f"Payment posted: {value} ({kind.value})", "client", client.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = f"{value} recorded."
+    return RedirectResponse(f"/clients/{client_id}#billing", status_code=303)
+
+
+@app.post("/payments/{payment_id}/delete")
+def payment_delete(payment_id: int, request: Request,
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.BILLING_EDIT))):
+    """Remove a mis-posted payment.
+
+    Deleting rather than reversing, because this is a small practice ledger
+    and a reversal entry nobody can explain is worse than a corrected one - but
+    the audit log keeps the amount, so the removal itself is not invisible.
+    """
+    payment = get_or_404(db, ehr.Payment, payment_id)
+    me = auth.current_user(request, db)
+    log(db, f"Payment removed: {payment.amount}", "client", payment.client_id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    client_id = payment.client_id
+    db.delete(payment)
+    db.commit()
+    return RedirectResponse(f"/clients/{client_id}#billing", status_code=303)
+
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_dashboard(request: Request, db: Session = Depends(get_db),
+                      _=Depends(needs(perms.BILLING_EDIT))):
+    """What is owed, and what needs a human.
+
+    Two lists rather than one dashboard of totals. A number on its own is a
+    number; the questions a biller actually has are "which claims came back
+    badly" and "what is still outstanding and how old is it".
+    """
+    charges = (db.query(ehr.Charge)
+               .options(selectinload(ehr.Charge.payments),
+                        selectinload(ehr.Charge.claims),
+                        joinedload(ehr.Charge.client))
+               .order_by(ehr.Charge.service_on.desc()).all())
+
+    outstanding = [c for c in charges if c.outstanding > 0.005]
+    problems = [c for c in db.query(ehr.Claim)
+                .options(joinedload(ehr.Claim.client))
+                .filter(ehr.Claim.status.in_(
+                    [ehr.ClaimStatus.rejected, ehr.ClaimStatus.denied]))
+                .order_by(ehr.Claim.responded_on.desc()).all()]
+
+    #  Ageing buckets, because "how much is outstanding" is a much less useful
+    #  question than "how much has been outstanding for more than ninety days".
+    today = date.today()
+    buckets = {"0-30": 0.0, "31-60": 0.0, "61-90": 0.0, "90+": 0.0}
+    for charge in outstanding:
+        days = (today - charge.service_on).days
+        key = ("0-30" if days <= 30 else "31-60" if days <= 60
+               else "61-90" if days <= 90 else "90+")
+        buckets[key] += charge.outstanding
+
+    return render("billing.html", ctx(
+        request, db, nav="billing", outstanding=outstanding, problems=problems,
+        buckets=buckets,
+        billed=sum(float(c.amount or 0) for c in charges),
+        received=sum(c.received for c in charges),
+        owed=sum(c.outstanding for c in outstanding)))

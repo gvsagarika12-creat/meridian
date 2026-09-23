@@ -338,10 +338,37 @@ class Charge(Base):
     note: Mapped[str] = mapped_column(String(255), default="")
 
     client: Mapped["Client"] = relationship()                      # noqa: F821
+    claims: Mapped[list["Claim"]] = relationship(
+        back_populates="charge", cascade="all, delete-orphan",
+        order_by="Claim.id")
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="charge", cascade="all, delete-orphan",
+        order_by="Payment.id")
+
+    @property
+    def received(self) -> float:
+        """Everything applied to this charge, from the payment records.
+
+        Payments are the source of truth. `paid_amount` is kept only for rows
+        coded before payments existed, and is used solely when there are no
+        payment records - a total and a list of its parts that can disagree is
+        a reconciliation that can never be closed, so only one of them counts
+        at a time.
+        """
+        if self.payments:
+            return float(sum(float(p.amount or 0) for p in self.payments))
+        return float(self.paid_amount or 0)
 
     @property
     def outstanding(self) -> float:
-        return float(self.amount or 0) - float(self.paid_amount or 0)
+        return float(self.amount or 0) - self.received
+
+    @property
+    def open_claim(self) -> "Claim | None":
+        """The claim currently in play - the newest that has not been replaced."""
+        replaced = {c.replaces_id for c in self.claims if c.replaces_id}
+        live = [c for c in self.claims if c.id not in replaced]
+        return live[-1] if live else None
 
 
 #  The codes a psychiatric practice bills most. A short list people recognise
@@ -361,3 +388,149 @@ COMMON_CPT = [
     ("99401", "Preventive counselling, 15 minutes"),
     ("96127", "Brief emotional/behavioural assessment"),
 ]
+
+
+# --- claims ---------------------------------------------------------------
+
+
+class ClaimStatus(str, enum.Enum):
+    prepared = "prepared"       # built here, not yet handed to the biller
+    submitted = "submitted"     # given to the billing service or clearinghouse
+    accepted = "accepted"       # the payer acknowledged receipt
+    rejected = "rejected"       # bounced before adjudication - a format problem
+    denied = "denied"           # adjudicated and refused - a coverage decision
+    paid = "paid"
+    appealed = "appealed"
+    closed = "closed"
+
+
+#  Rejected and denied are different things and the distinction is the whole
+#  point of tracking claims. A rejection never reached adjudication - a missing
+#  modifier, a wrong member id - and is fixed and resent. A denial is the payer
+#  deciding it will not pay, and is appealed or written off. A practice that
+#  treats them alike appeals format errors and resends coverage decisions, and
+#  does neither well.
+FIXABLE = (ClaimStatus.rejected,)
+APPEALABLE = (ClaimStatus.denied,)
+
+
+class Claim(Base):
+    """One submission of one charge to one payer.
+
+    Deliberately one charge per claim. Real claims can carry several service
+    lines, and a practice billing surgical cases would need that - but a
+    psychiatric visit is one line almost always, and a line-item model nobody
+    needs is a model everybody has to read around. When the second line is
+    genuinely required this grows a `claim_lines` table; until then it does not
+    pretend to.
+
+    `replaces` is the chain that matters. A rejected claim is corrected and
+    resent, and the new claim points at the old one, so the history reads as
+    "submitted, rejected for a missing modifier, corrected, paid" rather than
+    as three unrelated rows.
+    """
+
+    __tablename__ = "insurance_claims"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    charge_id: Mapped[int] = mapped_column(ForeignKey("charges.id"), index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+
+    payer: Mapped[str] = mapped_column(String(160), default="")
+    claim_number: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[ClaimStatus] = mapped_column(
+        Enum(ClaimStatus), default=ClaimStatus.prepared)
+
+    submitted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    responded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    billed: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    #  What the payer says the service is worth. Everything above it is a
+    #  contractual adjustment the practice may not bill the patient for, which
+    #  is why it is recorded rather than inferred.
+    allowed: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    paid: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    patient_responsibility: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    adjustment: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+
+    denial_code: Mapped[str] = mapped_column(String(32), default="")
+    denial_reason: Mapped[str] = mapped_column(String(255), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    replaces_id: Mapped[int | None] = mapped_column(
+        ForeignKey("insurance_claims.id"), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[str] = mapped_column(String(160), default="")
+
+    charge: Mapped["Charge"] = relationship(back_populates="claims")
+    client: Mapped["Client"] = relationship()                      # noqa: F821
+    replaces: Mapped["Claim | None"] = relationship(remote_side=[id])
+
+    @property
+    def needs_work(self) -> bool:
+        """Rejected or denied and not yet replaced or closed.
+
+        The list a biller works from. A denial nobody has looked at is money
+        the practice has decided, by inaction, not to collect.
+        """
+        return self.status in FIXABLE + APPEALABLE
+
+    @property
+    def outcome(self) -> str:
+        if self.status == ClaimStatus.rejected:
+            return "Rejected before adjudication - correct and resend"
+        if self.status == ClaimStatus.denied:
+            return "Denied by the payer - appeal or write off"
+        return self.status.value.replace("_", " ")
+
+
+# --- payments -------------------------------------------------------------
+
+
+class PaymentSource(str, enum.Enum):
+    payer = "payer"
+    patient = "patient"
+    adjustment = "adjustment"   # a write-down, not money
+
+
+class Payment(Base):
+    """Money received, as a record rather than a running total.
+
+    A charge used to carry a `paid_amount` field, which answered "how much" and
+    nothing else. A payment that cannot say when it arrived, from whom, by what
+    method and against which claim is a number nobody can reconcile against a
+    bank statement - and reconciliation is the entire job.
+
+    Adjustments are recorded here too, as a source rather than a separate table:
+    to the balance they behave identically, and splitting them means every
+    outstanding calculation has to remember to consult two places.
+    """
+
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    #  Nullable: an unapplied patient payment is a real thing - somebody pays
+    #  at the desk before the visit is coded - and refusing to record it until
+    #  there is a charge to attach it to means it is not recorded.
+    charge_id: Mapped[int | None] = mapped_column(
+        ForeignKey("charges.id"), nullable=True, index=True)
+    claim_id: Mapped[int | None] = mapped_column(
+        ForeignKey("insurance_claims.id"), nullable=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    source: Mapped[PaymentSource] = mapped_column(
+        Enum(PaymentSource), default=PaymentSource.patient)
+    method: Mapped[str] = mapped_column(String(32), default="")
+    reference: Mapped[str] = mapped_column(String(120), default="")
+    received_on: Mapped[date] = mapped_column(Date, default=date.today)
+    note: Mapped[str] = mapped_column(String(255), default="")
+
+    posted_by: Mapped[str] = mapped_column(String(160), default="")
+    posted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    client: Mapped["Client"] = relationship()                      # noqa: F821
+    charge: Mapped["Charge | None"] = relationship(back_populates="payments")
+
+
+METHODS = ["Card", "Cash", "Cheque", "EFT / ERA", "Insurance payment",
+           "Contractual adjustment", "Write-off"]

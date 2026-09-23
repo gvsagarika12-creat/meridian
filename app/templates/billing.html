@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Billing{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>Billing</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap" style="max-width:1000px">
+
+<div style="background:#eef2f6;border-left:3px solid var(--ink-3);
+            padding:12px 15px;margin:0 0 20px;font-size:14px;color:var(--ink-2)">
+  <b>Nothing here is filed with a payer.</b> Claim submission needs a
+  clearinghouse contract. This tracks what was sent, what came back and what is
+  still owed &mdash; the part a biller reconciles against a bank statement.
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+            gap:14px;margin-bottom:24px">
+  <div class="panel"><div class="body">
+    <div class="hint">Billed</div>
+    <b style="font-size:23px;font-variant-numeric:tabular-nums">{{ '%.2f'|format(billed) }}</b>
+  </div></div>
+  <div class="panel"><div class="body">
+    <div class="hint">Received</div>
+    <b style="font-size:23px;font-variant-numeric:tabular-nums;color:var(--good)">{{ '%.2f'|format(received) }}</b>
+  </div></div>
+  <div class="panel"><div class="body">
+    <div class="hint">Outstanding</div>
+    <b style="font-size:23px;font-variant-numeric:tabular-nums;color:var(--bad)">{{ '%.2f'|format(owed) }}</b>
+  </div></div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>Ageing</h2>
+  <div class="body">
+    <p class="hint" style="margin-top:0">
+      "How much is outstanding" is a much less useful question than "how much
+      has been outstanding for more than ninety days".</p>
+    <table class="bill-tbl">
+      <thead><tr><th>Days since service</th><th class="num">Outstanding</th></tr></thead>
+      <tbody>
+      {% for label, total in buckets.items() %}
+      <tr>
+        <td>{{ label }} days</td>
+        <td class="num {{ 'old' if label == '90+' and total > 0 }}">{{ '%.2f'|format(total) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>Claims that came back badly
+    {% if problems %}<span class="tag bad">{{ problems|length }}</span>{% endif %}</h2>
+  <div class="body" style="padding:0">
+    {% if problems %}
+    <table class="bill-tbl">
+      <thead><tr><th>Patient</th><th>Payer</th><th>What happened</th>
+        <th class="num">Billed</th></tr></thead>
+      <tbody>
+      {% for cl in problems %}
+      <tr>
+        <td><a href="/clients/{{ cl.client_id }}#billing"><b>{{ cl.client.name }}</b></a></td>
+        <td>{{ cl.payer or '—' }}</td>
+        <td>
+          <span class="tag bad">{{ cl.status.value }}</span>
+          <div class="hint" style="margin-top:3px">{{ cl.outcome }}
+            {%- if cl.denial_code %} &middot; code {{ cl.denial_code }}{% endif %}
+            {%- if cl.denial_reason %}<br>{{ cl.denial_reason }}{% endif %}</div>
+        </td>
+        <td class="num">{{ '%.2f'|format(cl.billed|float) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="padding:18px 16px;margin:0" class="hint">
+      No rejected or denied claims. Every claim that has come back was accepted
+      or paid.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Outstanding charges</h2>
+  <div class="body" style="padding:0">
+    {% if outstanding %}
+    <table class="bill-tbl">
+      <thead><tr><th>Patient</th><th>Service</th><th class="num">Billed</th>
+        <th class="num">Received</th><th class="num">Owed</th></tr></thead>
+      <tbody>
+      {% for c in outstanding %}
+      <tr>
+        <td><a href="/clients/{{ c.client_id }}#billing"><b>{{ c.client.name }}</b></a></td>
+        <td>{{ c.cpt }} <span class="hint">{{ c.description }}
+          &middot; {{ c.service_on.strftime('%d %b %Y') }}</span>
+          {% if c.open_claim %}
+          <div class="hint">claim {{ c.open_claim.status.value }}</div>{% endif %}</td>
+        <td class="num">{{ '%.2f'|format(c.amount|float) }}</td>
+        <td class="num">{{ '%.2f'|format(c.received) }}</td>
+        <td class="num old">{{ '%.2f'|format(c.outstanding) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="padding:18px 16px;margin:0" class="hint">Nothing outstanding.</p>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .bill-tbl{width:100%;border-collapse:collapse;font-size:14px}
+  .bill-tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.5px;color:var(--ink-3);font-weight:700;padding:11px 14px;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  .bill-tbl td{padding:11px 14px;border-bottom:1px solid var(--rule);
+    vertical-align:top}
+  .bill-tbl tbody tr:last-child td{border-bottom:0}
+  .bill-tbl .num{text-align:right;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .bill-tbl .num.old{color:var(--bad);font-weight:600}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;
+    border-radius:9px;text-transform:uppercase;letter-spacing:.4px}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+</style>
+
+</div>
+{% endblock %}
