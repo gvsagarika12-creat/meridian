@@ -1536,6 +1536,28 @@ def intakeq_import(request: Request, mode: str = F("resume"),
     return RedirectResponse("/integrations#intakeq-import", status_code=303)
 
 
+@app.post("/integrations/intakeq/preview")
+def intakeq_preview(request: Request, db: Session = Depends(get_db),
+                    _=Depends(needs(perms.INTEGRATIONS_IMPORT))):
+    """Two requests, no writes: what IntakeQ sends and what we make of it.
+
+    Worth its own button because the field mapping is the one part of the
+    import that cannot be proved without a real key, and a wrong field name
+    fails silently - it yields a blank column rather than an error. Seeing that
+    on two records costs nothing; discovering it after a two thousand patient
+    backfill costs the backfill.
+    """
+    result = intakeq.preview(db)
+    log(db, "IntakeQ preview run (no data written)", "integration", "intakeq")
+    db.commit()
+    #  Rendered here rather than stashed and redirected to. The session is a
+    #  signed JSON cookie with a four-kilobyte ceiling, and a couple of raw
+    #  IntakeQ records go straight past it - the write succeeds, the browser
+    #  drops the oversized cookie, and the user is silently signed out.
+    return render("intakeq_preview.html", ctx(
+        request, db, nav="integrations", result=result))
+
+
 @app.post("/integrations/intakeq/import/stop")
 def intakeq_import_stop(request: Request, db: Session = Depends(get_db),
                         _=Depends(needs(perms.INTEGRATIONS_IMPORT))):

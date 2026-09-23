@@ -203,6 +203,9 @@
         <input type="hidden" name="mode" value="resume">
         <button class="btn btn-sm btn-green">Resume</button></form>
       {% endif %}
+      <form class="inline" method="post" action="/integrations/intakeq/preview">
+        <button class="btn btn-sm">Preview &mdash; read 2 records, write nothing</button>
+      </form>
       <form class="inline" method="post" action="/integrations/intakeq/import">
         <input type="hidden" name="mode" value="full">
         <button class="btn btn-sm">

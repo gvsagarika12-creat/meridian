@@ -678,3 +678,57 @@ def fetch_pdf(db, intake: ImportedIntake) -> bytes | None:
     intake.pdf_fetched_at = datetime.utcnow()
     intake.pdf_error = ""
     return body
+
+
+# --- looking before leaping --------------------------------------------------
+
+
+def preview(db, pages: int = 1) -> dict:
+    """Fetch a page of each kind and show what the mapper makes of it.
+
+    Writes nothing. This exists because the mapping is the one part of the
+    import that cannot be proven without a real key: every field name here was
+    read out of IntakeQ's documentation, and a name that is wrong returns an
+    empty string rather than an error. Two thousand patients would import with
+    no date of birth and nothing would complain - and the date of birth is what
+    the archive matcher leans on hardest.
+
+    So before the first real run, this asks for two records and reports three
+    things side by side: the keys IntakeQ actually sent, what the mapper pulled
+    out of them, and which of our fields came back empty. A blank column is
+    obvious here and invisible after a backfill.
+    """
+    key = api_key(db)
+    if not key:
+        return {"ok": False, "error": "No IntakeQ API key is configured."}
+
+    run = ImportRun(stage="preview", status="running")
+    api = Api(key, run, Budget(requests=2 * pages, seconds=60))
+    out = {"ok": True, "requests_used": 0, "clients": [], "intakes": [],
+           "client_keys": [], "intake_keys": [], "blank_fields": {}}
+    try:
+        rows = api.json("/clients", {"page": 1, "includeProfile": "true"})
+        sample = [r for r in (rows or []) if isinstance(r, dict)][:3]
+        out["client_keys"] = sorted({k for r in sample for k in r})
+        blanks = {}
+        for raw in sample:
+            mapped = map_client(raw)
+            out["clients"].append({"raw": raw, "mapped": mapped})
+            for field_name, value in mapped.items():
+                if not value:
+                    blanks[field_name] = blanks.get(field_name, 0) + 1
+        out["blank_fields"] = blanks
+        out["client_count"] = len(rows or [])
+
+        rows = api.json("/intakes/summary", {"page": 1})
+        sample = [r for r in (rows or []) if isinstance(r, dict)][:3]
+        out["intake_keys"] = sorted({k for r in sample for k in r})
+        for raw in sample:
+            out["intakes"].append({"raw": raw, "mapped": map_intake(raw)})
+        out["intake_count"] = len(rows or [])
+    except (QuotaSpent, Refused) as exc:
+        out["ok"], out["error"] = False, str(exc)
+    except Exception as exc:                            # noqa: BLE001
+        out["ok"], out["error"] = False, f"{type(exc).__name__}: {exc}"
+    out["requests_used"] = run.requests_used
+    return out
