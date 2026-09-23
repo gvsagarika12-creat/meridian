@@ -166,73 +166,16 @@ def check_intakeq(db=None) -> Result:
         return Result(False, "Could not reach intakeq.com.", type(exc).__name__)
 
 
-TEBRA_ENDPOINT = "https://webservice.kareo.com/services/soap/2.1/KareoServices.svc"
-TEBRA_ENVELOPE = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:kareo="http://www.kareo.com/api/schemas/">
-  <soap:Body>
-    <kareo:GetPractices>
-      <kareo:request>
-        <kareo:RequestHeader>
-          <kareo:CustomerKey>{customer_key}</kareo:CustomerKey>
-          <kareo:Password>{password}</kareo:Password>
-          <kareo:User>{user}</kareo:User>
-        </kareo:RequestHeader>
-        <kareo:Fields><kareo:PracticeName>true</kareo:PracticeName></kareo:Fields>
-      </kareo:request>
-    </kareo:GetPractices>
-  </soap:Body>
-</soap:Envelope>"""
-
-
 def check_tebra(db=None) -> Result:
-    """Ask Tebra to list the practices this API user can see.
+    """Prove the Tebra credentials work, reading nothing about any patient.
 
-    GetPractices is the smallest call that proves all three credentials at once
-    and reads nothing about any patient - a connection test should not touch a
-    medical record to prove it can reach the server.
+    The SOAP client itself lives in app/tebra.py. This file used to hand-build
+    its own envelope, which meant two spellings of one request in one codebase -
+    and the day somebody fixed one of them was the day they disagreed.
     """
-    key = creds.resolve(db, "TEBRA_CUSTOMER_KEY")
-    user = creds.resolve(db, "TEBRA_USER")
-    password = creds.resolve(db, "TEBRA_PASSWORD")
-    absent = [n for n, v in (("TEBRA_CUSTOMER_KEY", key), ("TEBRA_USER", user),
-                             ("TEBRA_PASSWORD", password)) if not v]
-    if absent:
-        return Result(False, "Credentials missing.", "Not set: " + ", ".join(absent))
+    from . import tebra
 
-    def escape(value: str) -> str:
-        return (value.replace("&", "&amp;").replace("<", "&lt;")
-                     .replace(">", "&gt;"))
-
-    body = TEBRA_ENVELOPE.format(customer_key=escape(key), user=escape(user),
-                                 password=escape(password)).encode("utf-8")
-    request = urllib.request.Request(
-        TEBRA_ENDPOINT, data=body, method="POST",
-        headers={"Content-Type": "text/xml; charset=utf-8",
-                 "SOAPAction": "http://www.kareo.com/api/schemas/KareoServices/GetPractices"})
-    try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            text = response.read(200_000).decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read(2000).decode("utf-8", "replace") if exc.fp else ""
-        # A SOAP fault arrives as HTTP 500 with the reason inside it.
-        reason = ""
-        if "<faultstring>" in detail:
-            reason = detail.split("<faultstring>", 1)[1].split("</faultstring>", 1)[0]
-        return Result(False, f"Tebra replied HTTP {exc.code}.",
-                      reason or (exc.reason or "")[:200])
-    except Exception as exc:                            # noqa: BLE001
-        return Result(False, "Could not reach webservice.kareo.com.",
-                      type(exc).__name__)
-
-    if "<ErrorMessage>" in text:
-        message = text.split("<ErrorMessage>", 1)[1].split("</ErrorMessage>", 1)[0]
-        if message.strip():
-            return Result(False, "Tebra rejected the credentials.", message[:300])
-    count = text.count("<PracticeData")
-    return Result(True, f"Connected. {count} practice(s) visible."
-                        if count else "Connected. Tebra answered with no practices.",
-                  "GetPractices returned without an error.")
+    return tebra.check(db)
 
 
 def check_email(db=None) -> Result:

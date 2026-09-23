@@ -303,6 +303,14 @@ class Client(Base):
     # guess into a provenance column defeats the column.
     source: Mapped[str] = mapped_column(String(16), default="")
 
+    # This patient's chart id in Tebra, once one has been created for them.
+    # Every push checks it first, which is the only thing standing between this
+    # integration and two charts for one person - a failure that is silent, puts
+    # their answers on one chart and their history on the other, and is usually
+    # found months later by somebody reading a record that looks oddly empty.
+    tebra_patient_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True)
+
     # The hospital's own patient number - the same number Tebra and the archive
     # use. Not this table's primary key and deliberately not a foreign key: it
     # is issued by another system, it is the only thing the two systems share,

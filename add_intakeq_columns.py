@@ -28,6 +28,13 @@ COLUMNS = [
     ("source",
      "ALTER TABLE clients ADD COLUMN source VARCHAR(16) DEFAULT '' NOT NULL",
      None),
+    #  The Tebra chart id. Unique, because the whole purpose of the column is to
+    #  make a second push impossible - and a uniqueness rule the database
+    #  enforces survives a bug in the code that checks it.
+    ("tebra_patient_id",
+     "ALTER TABLE clients ADD COLUMN tebra_patient_id VARCHAR(64)",
+     "CREATE UNIQUE INDEX IF NOT EXISTS ix_clients_tebra_patient_id "
+     "ON clients (tebra_patient_id)"),
 ]
 
 
