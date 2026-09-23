@@ -4257,6 +4257,10 @@ def portal_messages_send(request: Request, body: str = F(""),
     if text:
         db.add(portal.PatientMessage(client_id=client.id, sender_role="patient",
                                      body=text))
+        #  Never an attempt to answer what they asked - see the module
+        #  docstring on send_acknowledgment_if_due for why that boundary does
+        #  not move, including for a question that looks simple.
+        portal.send_acknowledgment_if_due(db, client.id)
         cache.drop("nav:unread_messages")
         log(db, "Portal message sent", "client", client.id, ip=client_ip(request))
         db.commit()

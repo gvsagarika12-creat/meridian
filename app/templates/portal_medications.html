@@ -1,35 +1,47 @@
 {% extends "portal_base.html" %}
+{% block title %}Medications{% endblock %}
 {% block body %}
-<h1 style="font-size:24px;margin:0 0 20px">Medications</h1>
+<h1 style="font-size:23px;margin:4px 0 20px">Medications</h1>
 
-<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;
-            padding:18px;margin-bottom:16px">
-  <h2 style="margin:0 0 12px;font-size:16px">Current</h2>
-  {% for m in active %}
-  <div style="padding:9px 0;border-top:1px solid var(--rule)">
-    <b>{{ m.display }}</b>
-    {% if m.prescribed_on %}<div class="hint">Started {{ m.prescribed_on.strftime('%d %b %Y') }}</div>{% endif %}
+<div class="panel" style="margin-bottom:16px">
+  <h2>Current</h2>
+  <div class="body">
+    {% for m in active %}
+    <div style="padding:11px 0;border-top:1px solid var(--rule);display:flex;
+                justify-content:space-between;align-items:baseline;gap:12px">
+      <div>
+        <b>{{ m.display }}</b>
+        {% if m.prescribed_on %}<div class="hint" style="margin-top:2px">
+          Started {{ m.prescribed_on.strftime('%d %b %Y') }}</div>{% endif %}
+      </div>
+      <span class="pill" style="background:var(--good-soft);color:var(--good)">active</span>
+    </div>
+    {% else %}
+    <p class="hint" style="margin:0">No active medications on file.</p>
+    {% endfor %}
   </div>
-  {% else %}
-  <p class="hint" style="margin:0">No active medications on file.</p>
-  {% endfor %}
 </div>
 
 {% if past %}
-<details style="background:#fff;border:1px solid var(--rule);border-radius:8px;padding:18px">
-  <summary style="cursor:pointer;font-size:16px;font-weight:600">Past medications</summary>
-  {% for m in past %}
-  <div style="padding:9px 0;border-top:1px solid var(--rule)">
-    <span class="hint">{{ m.display }}
-      {%- if m.stopped_on %} &middot; stopped {{ m.stopped_on.strftime('%d %b %Y') }}{% endif %}</span>
+<div class="panel">
+  <div class="body" style="padding-top:18px">
+    <details>
+      <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--ink)">
+        Past medications ({{ past|length }})</summary>
+      {% for m in past %}
+      <div style="padding:9px 0;border-top:1px solid var(--rule)">
+        <span class="hint">{{ m.display }}
+          {%- if m.stopped_on %} &middot; stopped {{ m.stopped_on.strftime('%d %b %Y') }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </details>
   </div>
-  {% endfor %}
-</details>
+</div>
 {% endif %}
 
 <p class="hint" style="margin-top:16px">
   Questions about a medication? <a href="/portal/messages">Send your care team a message</a>.
   This list reflects what is on file and may not include something started
-  elsewhere - tell us if anything here looks wrong.
+  elsewhere &mdash; tell us if anything here looks wrong.
 </p>
 {% endblock %}

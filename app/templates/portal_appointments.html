@@ -1,31 +1,43 @@
 {% extends "portal_base.html" %}
+{% block title %}Appointments{% endblock %}
 {% block body %}
-<h1 style="font-size:24px;margin:0 0 20px">Appointments</h1>
+<h1 style="font-size:23px;margin:4px 0 20px">Appointments</h1>
 
-<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;
-            padding:18px;margin-bottom:16px">
-  <h2 style="margin:0 0 12px;font-size:16px">Upcoming</h2>
-  {% for a in upcoming %}
-  <div style="padding:10px 0;border-top:1px solid var(--rule)">
-    <b>{{ a.on_day.strftime('%A, %d %B %Y') }}</b>{{ ' at ' ~ a.at_time if a.at_time }}
-    <div class="hint">{{ a.kind }}
-      {%- if a.provider %} with {{ a.provider.name }}{% endif %}
-      {%- if a.location %} &middot; {{ a.location }}{% endif %}</div>
+<div class="panel" style="margin-bottom:16px">
+  <h2>Upcoming</h2>
+  <div class="body">
+    {% for a in upcoming %}
+    <div style="padding:12px 0;border-top:1px solid var(--rule)">
+      <b>{{ a.on_day.strftime('%A, %d %B %Y') }}</b>{{ ' at ' ~ a.at_time if a.at_time }}
+      <div class="hint" style="margin-top:2px">{{ a.kind }}
+        {%- if a.provider %} with {{ a.provider.name }}{% endif %}
+        {%- if a.location %} &middot; {{ a.location }}{% endif %}</div>
+    </div>
+    {% else %}
+    <p class="hint" style="margin:0">Nothing scheduled. Call us to book a visit.</p>
+    {% endfor %}
   </div>
-  {% else %}
-  <p class="hint" style="margin:0">Nothing scheduled. Call us to book a visit.</p>
-  {% endfor %}
 </div>
 
 {% if past %}
-<details style="background:#fff;border:1px solid var(--rule);border-radius:8px;padding:18px">
-  <summary style="cursor:pointer;font-size:16px;font-weight:600">Past appointments</summary>
-  {% for a in past[:20] %}
-  <div style="padding:9px 0;border-top:1px solid var(--rule)">
-    <span class="hint">{{ a.on_day.strftime('%d %b %Y') }} &middot; {{ a.kind }}
-      &middot; {{ a.status.value }}</span>
+<div class="panel">
+  <div class="body" style="padding-top:18px">
+    <details>
+      <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--ink)">
+        Past appointments ({{ past|length }})</summary>
+      {% for a in past[:20] %}
+      <div style="padding:9px 0;border-top:1px solid var(--rule);display:flex;
+                  justify-content:space-between">
+        <span class="hint">{{ a.on_day.strftime('%d %b %Y') }} &middot; {{ a.kind }}</span>
+        <span class="pill" style="background:{{ 'var(--good-soft)' if a.status.value == 'attended'
+          else 'var(--bad-soft)' if a.status.value in ('cancelled','no show') else '#eef2f2' }};
+          color:{{ 'var(--good)' if a.status.value == 'attended'
+          else 'var(--bad)' if a.status.value in ('cancelled','no show') else 'var(--ink-3)' }}">
+          {{ a.status.value }}</span>
+      </div>
+      {% endfor %}
+    </details>
   </div>
-  {% endfor %}
-</details>
+</div>
 {% endif %}
 {% endblock %}

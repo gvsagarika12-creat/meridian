@@ -1,26 +1,30 @@
 {% extends "portal_base.html" %}
+{% block title %}Forms{% endblock %}
 {% block body %}
-<h1 style="font-size:24px;margin:0 0 20px">Forms</h1>
+<h1 style="font-size:23px;margin:4px 0 20px">Forms</h1>
 
-<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;padding:18px">
-  {% for s in submissions %}
-  <div style="padding:12px 0;border-top:1px solid var(--rule);display:flex;
-              justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-    <div>
-      <b>{{ s.form.name }}</b>
-      <div class="hint">Sent {{ s.sent_at.strftime('%d %b %Y') }}</div>
+<div class="panel">
+  <div class="body" style="padding-top:6px">
+    {% for s in submissions %}
+    <div style="padding:14px 0;border-top:1px solid var(--rule);display:flex;
+                justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <b>{{ s.form.name }}</b>
+        <div class="hint" style="margin-top:2px">Sent {{ s.sent_at.strftime('%d %b %Y') }}</div>
+      </div>
+      {% if s.is_open %}
+      <a class="btn btn-sm btn-green" href="/f/{{ s.token }}">
+        {{ 'Continue' if s.current_page else 'Start' }}</a>
+      {% elif s.status.value in ('submitted', 'reviewed') %}
+      <span class="pill" style="background:var(--good-soft);color:var(--good)">
+        completed {{ s.submitted_at.strftime('%d %b %Y') if s.submitted_at }}</span>
+      {% else %}
+      <span class="hint">Expired &mdash; call us for a new link</span>
+      {% endif %}
     </div>
-    {% if s.is_open %}
-    <a class="btn btn-sm btn-green" href="/f/{{ s.token }}">
-      {{ 'Continue' if s.current_page else 'Start' }}</a>
-    {% elif s.status.value in ('submitted', 'reviewed') %}
-    <span class="hint">Completed {{ s.submitted_at.strftime('%d %b %Y') if s.submitted_at }}</span>
     {% else %}
-    <span class="hint">Expired &mdash; call us for a new link</span>
-    {% endif %}
+    <p class="hint" style="margin:0">No forms have been sent to you yet.</p>
+    {% endfor %}
   </div>
-  {% else %}
-  <p class="hint" style="margin:0">No forms have been sent to you yet.</p>
-  {% endfor %}
 </div>
 {% endblock %}

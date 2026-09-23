@@ -46,7 +46,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from fastapi import Request
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, Session
 
 from .models import Base
@@ -80,6 +80,16 @@ class PatientMessage(Base):
     staff_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True)
     body: Mapped[str] = mapped_column(Text)
+
+    # True only for the automatic "we got this" acknowledgment - see
+    # send_acknowledgment_if_due below. Never true for anything a person
+    # wrote. Kept as its own column rather than inferred from staff_user_id
+    # being empty, because "nobody signed this" and "this is not from a
+    # person" happen to coincide today but are not the same fact, and a
+    # future feature (a shared team inbox account, say) could make them
+    # differ. The template that renders this must always be able to tell an
+    # automated line from a clinician's without guessing.
+    is_auto: Mapped[bool] = mapped_column(Boolean, default=False)
 
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     read_by_patient_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -168,6 +178,44 @@ async def portal_auth_middleware(request: Request, call_next):
 # Pure functions over a Client already loaded - no query of their own, so a
 # route that has already fetched the patient with the right eager-loads pays
 # nothing extra to ask these for a summary.
+
+
+ACKNOWLEDGMENT = (
+    "This is an automated note, not a reply from your care team: your "
+    "message has been received and a real person will read and respond, "
+    "usually within one to two business days. For anything urgent, call "
+    "us directly. For a medical emergency, call 911."
+)
+
+
+def send_acknowledgment_if_due(db, client_id: int) -> None:
+    """Post the one automatic line this portal is willing to send, at most
+    once a day, and only ever this one line.
+
+    Deliberately not "smart". This never looks at what the patient wrote and
+    never tries to answer it - seeing this same fixed sentence on a dosing
+    question and on "what are your hours" is the whole point: a system that
+    sometimes attempts an answer trains people to trust the times it does not
+    attempt one, and the difference between those two states has to be
+    obvious from the outside, not a judgement call made per message.
+
+    Bounded to once per calendar day regardless of how many messages arrive,
+    so a burst of three messages back to back gets one acknowledgment, not
+    three - repeating "someone will get to this" after every line in a
+    conversation the patient can see for themselves is happening reads as
+    the system being unable to tell they are still talking.
+    """
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    already_answered_today = (
+        db.query(PatientMessage)
+        .filter(PatientMessage.client_id == client_id,
+                PatientMessage.sender_role == "staff",
+                PatientMessage.sent_at >= today_start)
+        .first())
+    if already_answered_today:
+        return
+    db.add(PatientMessage(client_id=client_id, sender_role="staff",
+                          staff_user_id=None, body=ACKNOWLEDGMENT, is_auto=True))
 
 
 def unread_message_count(db, client_id: int) -> int:

@@ -1,37 +1,68 @@
 {% extends "portal_base.html" %}
+{% block title %}Messages{% endblock %}
 {% block body %}
-<h1 style="font-size:24px;margin:0 0 8px">Messages</h1>
-<p class="hint" style="margin:0 0 20px">
+<h1 style="font-size:23px;margin:4px 0 6px">Messages</h1>
+<p class="hint" style="margin:0 0 18px">
   A real member of your care team reads and answers these &mdash; usually
-  within one to two business days. For anything urgent, call us at
+  within one to two business days. For anything urgent, call
   {{ practice.phone }}. For an emergency, call 911.
 </p>
 
-<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;
-            padding:18px;margin-bottom:16px;max-height:480px;overflow-y:auto;
-            display:flex;flex-direction:column;gap:12px">
-  {% for m in thread %}
-  <div style="display:flex;{{ 'justify-content:flex-end' if m.from_patient }}">
-    <div style="max-width:78%;padding:10px 14px;border-radius:10px;
-                background:{{ '#dceefb' if m.from_patient else '#eef2f2' }};
-                {{ 'border-bottom-right-radius:2px' if m.from_patient
-                   else 'border-bottom-left-radius:2px' }}">
-      <div style="white-space:pre-wrap;font-size:14.5px">{{ m.body }}</div>
-      <div class="hint" style="margin-top:5px;font-size:11.5px">
-        {{ 'You' if m.from_patient else (m.staff_user.name if m.staff_user else 'Care team') }}
-        &middot; {{ m.sent_at.strftime('%d %b, %H:%M') }}</div>
+<div class="panel">
+  <div id="thread" style="max-height:460px;overflow-y:auto;padding:20px 22px;
+              display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth">
+    {% for m in thread %}
+    <div style="display:flex;gap:10px;{{ 'flex-direction:row-reverse' if m.from_patient }}">
+      <span class="avatar" style="width:32px;flex:0 0 32px;height:32px;font-size:13px;
+            background:{{ 'var(--accent)' if m.from_patient else 'var(--rail)' }}">
+        {{ (client.first_name[:1] ~ client.last_name[:1]) if m.from_patient
+           else (practice.short_name or practice.name)[:1] }}</span>
+      <div style="max-width:74%">
+        <div style="padding:10px 14px;border-radius:14px;font-size:14.5px;
+                    line-height:1.5;white-space:pre-wrap;
+                    {% if m.is_auto %}border:1px dashed #c9b98a;background:#fdf9f0;color:var(--ink-2);
+                    {% else %}background:{{ 'var(--accent-soft)' if m.from_patient else '#eef2f2' }};color:var(--ink);
+                    {% endif %}
+                    {{ 'border-bottom-right-radius:3px' if m.from_patient
+                       else 'border-bottom-left-radius:3px' }}">
+          {%- if m.is_auto %}<div style="font-size:11px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.4px;color:#8a6d1f;margin-bottom:4px">&#9881; Automated notice</div>{% endif -%}
+          {{ m.body }}</div>
+        <div class="hint" style="margin-top:4px;font-size:11px;
+                    text-align:{{ 'right' if m.from_patient }}">
+          {{ 'You' if m.from_patient else ('Automated' if m.is_auto
+             else (m.staff_user.name if m.staff_user else 'Care team')) }}
+          &middot; {{ m.sent_at.strftime('%d %b, %H:%M') }}</div>
+      </div>
     </div>
+    {% else %}
+    <div style="text-align:center;padding:30px 10px">
+      <p class="hint" style="margin:0">No messages yet. Send the first one below.</p>
+    </div>
+    {% endfor %}
   </div>
-  {% else %}
-  <p class="hint" style="margin:0">No messages yet. Send the first one below.</p>
-  {% endfor %}
+
+  <form method="post" action="/portal/messages" style="border-top:1px solid var(--rule);
+        padding:16px 22px;display:grid;gap:10px">
+    <textarea name="body" id="body" rows="3" maxlength="{{ max_len }}" required
+              placeholder="e.g. I have a question about a medication I was prescribed..."
+              oninput="document.getElementById('cc').textContent = this.value.length;
+                       document.getElementById('sendBtn').disabled = !this.value.trim()"
+              style="width:100%;font-family:inherit;font-size:14.5px;line-height:1.5;
+                     padding:11px 13px;border:1px solid #ccd4da;border-radius:8px;
+                     resize:vertical"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="hint" style="font-size:12px"><span id="cc">0</span>/{{ max_len }}</span>
+      <button class="btn btn-green" id="sendBtn" disabled>Send</button>
+    </div>
+  </form>
 </div>
 
-<form method="post" action="/portal/messages" style="display:grid;gap:10px">
-  <textarea name="body" rows="3" maxlength="{{ max_len }}" required
-            placeholder="e.g. I have a question about a medication I was prescribed..."
-            style="width:100%;font-family:inherit;font-size:14.5px;line-height:1.5;
-                   padding:11px;border:1px solid #ccd4da;border-radius:6px"></textarea>
-  <button class="btn btn-green" style="justify-self:start">Send</button>
-</form>
+<script>
+  // Land on the newest message, not the oldest - the point of opening this
+  // page is almost always "what did they say back", not the start of a
+  // conversation from months ago.
+  var t = document.getElementById('thread');
+  if (t) t.scrollTop = t.scrollHeight;
+</script>
 {% endblock %}

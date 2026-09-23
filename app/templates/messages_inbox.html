@@ -21,7 +21,9 @@
       <span class="hint">{{ r.last.sent_at.strftime('%d %b, %H:%M') }}</span>
     </div>
     <div class="hint" style="margin-top:4px;white-space:nowrap;overflow:hidden;
-                text-overflow:ellipsis">{{ r.last.body }}</div>
+                text-overflow:ellipsis">
+      {%- if r.last.is_auto %}<span style="color:#8a6d1f">[automated notice sent]</span>
+      {%- else %}{{ r.last.body }}{% endif -%}</div>
   </a>
   {% endfor %}
 </div></div>

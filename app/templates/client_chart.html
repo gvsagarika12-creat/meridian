@@ -197,10 +197,14 @@
           {% for m in message_thread %}
           <div style="display:flex;{{ 'justify-content:flex-end' if not m.from_patient }}">
             <div style="max-width:78%;padding:9px 13px;border-radius:9px;
-                        background:{{ '#eef2f2' if m.from_patient else '#dceefb' }}">
+                        {% if m.is_auto %}border:1px dashed #c9b98a;background:#fdf9f0
+                        {% else %}background:{{ '#eef2f2' if m.from_patient else '#dceefb' }}{% endif %}">
+              {% if m.is_auto %}<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;
+                  letter-spacing:.4px;color:#8a6d1f;margin-bottom:3px">Automated notice sent to patient</div>{% endif %}
               <div style="white-space:pre-wrap;font-size:14px">{{ m.body }}</div>
               <div class="hint" style="margin-top:4px;font-size:11px">
-                {{ client.first_name if m.from_patient else (m.staff_user.name if m.staff_user else 'Staff') }}
+                {{ client.first_name if m.from_patient else ('Automated' if m.is_auto
+                   else (m.staff_user.name if m.staff_user else 'Staff')) }}
                 &middot; {{ m.sent_at.strftime('%d %b, %H:%M') }}</div>
             </div>
           </div>
