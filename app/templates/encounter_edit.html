@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit note' if encounter else 'New note' }}{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/clients">All Patients</a>
+  <span class="sep">&rsaquo;</span><a href="/clients/{{ client.id }}">{{ client.name }}</a>
+  <span class="sep">&rsaquo;</span>{{ 'Edit note' if encounter else 'New note' }}</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap" style="max-width:880px">
+
+{% if not encounter %}
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+  {% for name in templates_available %}
+  <a class="btn btn-sm {{ 'btn-green' if name == template }}"
+     href="/clients/{{ client.id }}/encounters/new?template={{ name | urlencode }}">{{ name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="/clients/{{ client.id }}/encounters">
+  {% if encounter %}<input type="hidden" name="encounter_id" value="{{ encounter.id }}">{% endif %}
+  <input type="hidden" name="template" value="{{ template }}">
+
+  <div class="panel">
+    <h2>{{ template }} &mdash; {{ client.name }}</h2>
+    <div class="body">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">
+        <label>Date seen
+          <input type="date" name="seen_on"
+                 value="{{ (encounter.seen_on if encounter else today).isoformat() }}"></label>
+        <label style="flex:1;min-width:240px">Reason for visit
+          <input type="text" name="reason" style="width:100%"
+                 value="{{ encounter.reason if encounter else '' }}"
+                 placeholder="e.g. medication review"></label>
+      </div>
+
+      {% for key, label in sections_for(template) %}
+      <label style="display:block;margin-bottom:16px">{{ label }}
+        <textarea name="s_{{ key }}" rows="{{ 7 if template == 'Free text' else 4 }}"
+                  style="width:100%;font-family:inherit;font-size:14.5px;
+                         line-height:1.6;padding:11px;margin-top:5px"
+                  spellcheck="true">{{ (encounter.body.get(key, '') if encounter else '') }}</textarea>
+      </label>
+      {% endfor %}
+
+      <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+        <button class="btn btn-green">Save draft</button>
+        <a class="btn btn-sm" href="/clients/{{ client.id }}">Cancel</a>
+        <span class="hint" style="margin-left:6px">
+          Saving keeps it editable. Signing locks it.</span>
+      </div>
+    </div>
+  </div>
+</form>
+
+</div>
+{% endblock %}

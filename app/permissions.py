@@ -35,6 +35,8 @@ SUBMISSIONS_SEND = "submissions.send"
 EVENTS_VIEW = "events.view"
 USERS_MANAGE = "users.manage"
 INTEGRATIONS_IMPORT = "integrations.import"
+PRESCRIBE = "clinical.prescribe"
+BILLING_EDIT = "billing.edit"
 
 LABELS = {
     FORMS_VIEW: "See the form library",
@@ -50,6 +52,8 @@ LABELS = {
     EVENTS_VIEW: "Read the audit log",
     USERS_MANAGE: "Manage staff accounts",
     INTEGRATIONS_IMPORT: "Import the patient list from IntakeQ",
+    PRESCRIBE: "Write and sign prescriptions (prescribers only)",
+    BILLING_EDIT: "Code and manage charges",
 }
 
 # --- the policy -----------------------------------------------------------
@@ -68,6 +72,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
         CLIENTS_VIEW, CLIENTS_EDIT, CLINICAL_EDIT, SCHEDULE_EDIT,
         SUBMISSIONS_VIEW, SUBMISSIONS_SEND,
         EVENTS_VIEW, USERS_MANAGE, INTEGRATIONS_IMPORT,
+        PRESCRIBE, BILLING_EDIT,
     },
     # Runs the system, does not practise medicine. An administrator can reach
     # every screen and every account, and still cannot write a diagnosis - which
@@ -81,20 +86,24 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
         # desk edits one patient at a time and has no business starting a job
         # that writes thousands of rows.
         EVENTS_VIEW, USERS_MANAGE, INTEGRATIONS_IMPORT,
+        #  Billing yes, prescribing no. An administrator who can
+        #  write a prescription is a prescriber, whatever the org
+        #  chart says - and this one does not practise medicine.
+        BILLING_EDIT,
     },
     # Clinicians build and read, but do not destroy. Deleting a form that has
     # submissions attached is an administrative act with records consequences.
     UserRole.practitioner: {
         FORMS_VIEW, FORMS_CREATE, FORMS_EDIT,
         CLIENTS_VIEW, CLIENTS_EDIT, CLINICAL_EDIT, SCHEDULE_EDIT,
-        SUBMISSIONS_VIEW, SUBMISSIONS_SEND,
+        SUBMISSIONS_VIEW, SUBMISSIONS_SEND, PRESCRIBE,
     },
     # Front desk runs the day to day: book people in, send their paperwork,
     # chase what has not come back. No authoring, no deleting.
     UserRole.front_desk: {
         FORMS_VIEW,
         CLIENTS_VIEW, CLIENTS_EDIT, SCHEDULE_EDIT,
-        SUBMISSIONS_VIEW, SUBMISSIONS_SEND,
+        SUBMISSIONS_VIEW, SUBMISSIONS_SEND, BILLING_EDIT,
     },
     # Compliance and audit. Sees everything, changes nothing - including the
     # audit log, which is the one thing they are usually here to read.

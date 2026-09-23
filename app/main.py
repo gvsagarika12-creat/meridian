@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import subprocess
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -40,6 +42,7 @@ from . import credentials
 from . import cache
 from . import integrations
 from . import intakeq
+from . import ehr
 from . import simulation
 from . import tebra
 from . import schedule
@@ -133,6 +136,10 @@ templates.env.globals["P"] = perms
 templates.env.globals["MIN_PW"] = auth.MIN_PASSWORD_LENGTH
 # Where a clinical row came from - "entered here" / "from Tebra" / "sample data".
 templates.env.globals["SOURCE"] = clinical.SOURCE_LABEL
+templates.env.globals["sections_for"] = lambda name: ehr.TEMPLATES.get(
+    name, ehr.TEMPLATES["Free text"])
+templates.env.globals["today"] = date.today
+templates.env.globals["COMMON_CPT"] = ehr.COMMON_CPT
 # The labels IntakeQ shows for each type, kept out of the enum so the
 # stored value stays a stable identifier.
 templates.env.globals["prefill_for"] = prefill_for
@@ -231,6 +238,14 @@ def ctx(request: Request, db: Session, **extra) -> dict:
         # The badge beside Calendar. Counted, not listed, so every page pays for
         # one query rather than building the whole reminder list.
         "due": cache.get_or_set(cache.NAV_DUE, lambda: schedule.due_count(db)),
+        #  Results that came back and nobody has said they have seen. The one
+        #  clinical count worth a badge: an unread result is the failure with
+        #  consequences, and it should be visible without going looking.
+        "unreviewed": cache.get_or_set(
+            "nav:unreviewed",
+            lambda: db.query(ehr.Order).filter(
+                ehr.Order.status == ehr.OrderStatus.resulted,
+                ehr.Order.reviewed_at.is_(None)).count()),
         # The Connections screen resolves each credential through the database,
         # so the template needs the session it was rendered with.
         "db": db,
@@ -1202,6 +1217,15 @@ def client_chart(client_id: int, request: Request, db: Session = Depends(get_db)
         #  row here. Listed beside the forms sent from this app on purpose: to
         #  the person reading the chart they are the same thing, and which
         #  system happened to collect one is not a distinction worth a click.
+        encounters=(db.query(ehr.Encounter).filter_by(client_id=client.id)
+                    .order_by(ehr.Encounter.seen_on.desc(),
+                              ehr.Encounter.id.desc()).all()),
+        prescriptions=(db.query(ehr.Prescription).filter_by(client_id=client.id)
+                       .order_by(ehr.Prescription.id.desc()).all()),
+        orders=(db.query(ehr.Order).filter_by(client_id=client.id)
+                .order_by(ehr.Order.id.desc()).all()),
+        charges=(db.query(ehr.Charge).filter_by(client_id=client.id)
+                 .order_by(ehr.Charge.id.desc()).all()),
         imported_intakes=(db.query(intakeq.ImportedIntake)
                           .filter_by(client_id=client.id)
                           .order_by(intakeq.ImportedIntake.submitted_at.desc())
@@ -2434,3 +2458,390 @@ async def restore_path(request, call_next):
 
 
 seed()
+
+
+# ---------------------------------------------------------------- the record
+#
+# Encounters, prescriptions, orders and charges. Everything here records, signs
+# and prints; nothing transmits. See app/ehr.py for why that line is where it
+# is, and why the screens repeat it.
+
+
+@app.get("/clients/{client_id}/encounters/new", response_class=HTMLResponse)
+def encounter_new(client_id: int, request: Request, template: str = "SOAP",
+                  db: Session = Depends(get_db),
+                  _=Depends(needs(perms.CLINICAL_EDIT))):
+    client = get_or_404(db, Client, client_id)
+    return render("encounter_edit.html", ctx(
+        request, db, nav="clients", client=client, encounter=None,
+        template=template if template in ehr.TEMPLATES else "SOAP",
+        templates_available=list(ehr.TEMPLATES)))
+
+
+@app.get("/encounters/{encounter_id}", response_class=HTMLResponse)
+def encounter_view(encounter_id: int, request: Request,
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.CLIENTS_VIEW))):
+    enc = get_or_404(db, ehr.Encounter, encounter_id)
+    log(db, "Clinical note viewed", "encounter", encounter_id,
+        user_id=getattr(auth.current_user(request, db), "id", None))
+    db.commit()
+    return render("encounter_view.html", ctx(
+        request, db, nav="clients", encounter=enc, client=enc.client,
+        note=request.session.pop("encounter_note", ""),
+        error=request.session.pop("encounter_error", "")))
+
+
+@app.get("/encounters/{encounter_id}/edit", response_class=HTMLResponse)
+def encounter_edit(encounter_id: int, request: Request,
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.CLINICAL_EDIT))):
+    enc = get_or_404(db, ehr.Encounter, encounter_id)
+    if enc.is_signed:
+        #  A signed note is not editable, and the route says so rather than
+        #  rendering a form whose save would be refused. Offering an edit box
+        #  for a locked record teaches people the lock is advisory.
+        request.session["encounter_error"] = (
+            "This note is signed. Signed notes cannot be edited - add an "
+            "addendum instead, which is recorded after the original and names "
+            "who wrote it.")
+        return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+    return render("encounter_edit.html", ctx(
+        request, db, nav="clients", client=enc.client, encounter=enc,
+        template=enc.template, templates_available=list(ehr.TEMPLATES)))
+
+
+@app.post("/clients/{client_id}/encounters")
+async def encounter_save(client_id: int, request: Request,
+                         db: Session = Depends(get_db),
+                         _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Create or update a draft note.
+
+    Reads the section fields generically so a template can gain a section
+    without a second edit here - and refuses outright on a signed note, because
+    the form is the last place a lock should be enforced, not the only one.
+    """
+    client = get_or_404(db, Client, client_id)
+    form = await request.form()
+    me = auth.current_user(request, db)
+
+    enc_id = _int_or_none(form.get("encounter_id") or "")
+    enc = db.get(ehr.Encounter, enc_id) if enc_id else None
+    if enc and enc.is_signed:
+        request.session["encounter_error"] = "That note is signed and cannot change."
+        return RedirectResponse(f"/encounters/{enc.id}", status_code=303)
+
+    template = form.get("template") or "SOAP"
+    if template not in ehr.TEMPLATES:
+        template = "SOAP"
+    sections = {key: (form.get(f"s_{key}") or "").strip()
+                for key, _label in ehr.TEMPLATES[template]}
+
+    seen = _date_or_none(form.get("seen_on") or "") or date.today()
+    if enc is None:
+        enc = ehr.Encounter(client_id=client.id,
+                            provider_id=getattr(me, "id", None))
+        db.add(enc)
+    enc.seen_on = seen
+    enc.reason = (form.get("reason") or "").strip()[:255]
+    enc.template = template
+    enc.sections = json.dumps(sections)
+    enc.updated_at = datetime.utcnow()
+    db.flush()
+
+    log(db, f"Clinical note saved (draft)", "encounter", enc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["encounter_note"] = "Saved as a draft. Nothing is locked until you sign it."
+    return RedirectResponse(f"/encounters/{enc.id}", status_code=303)
+
+
+@app.post("/encounters/{encounter_id}/sign")
+def encounter_sign(encounter_id: int, request: Request,
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Sign a note, which locks it for good.
+
+    The signature is the clinician's own name and the moment, stored on the row.
+    There is deliberately no unsign: a record that can be unsigned, edited and
+    re-signed is a record with no fixed point, and the fixed point is the entire
+    reason a signature exists.
+    """
+    enc = get_or_404(db, ehr.Encounter, encounter_id)
+    me = auth.current_user(request, db)
+    if enc.is_signed:
+        request.session["encounter_error"] = "Already signed."
+        return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+    if not enc.filled:
+        request.session["encounter_error"] = (
+            "Nothing has been written yet. An empty signed note is a record "
+            "that somebody attested to nothing.")
+        return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+
+    enc.status = ehr.NoteStatus.signed
+    enc.signed_at = datetime.utcnow()
+    enc.signed_by = (me.name if me else "")[:160]
+    log(db, "Clinical note signed", "encounter", enc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["encounter_note"] = (
+        f"Signed by {enc.signed_by}. It is now locked; corrections go in an addendum.")
+    return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+
+
+@app.post("/encounters/{encounter_id}/addendum")
+def encounter_addendum(encounter_id: int, request: Request, body: str = F(""),
+                       db: Session = Depends(get_db),
+                       _=Depends(needs(perms.CLINICAL_EDIT))):
+    enc = get_or_404(db, ehr.Encounter, encounter_id)
+    me = auth.current_user(request, db)
+    if not body.strip():
+        return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+    db.add(ehr.Addendum(encounter_id=enc.id, body=body.strip(),
+                        written_by=(me.name if me else "")[:160]))
+    log(db, "Note addendum added", "encounter", enc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["encounter_note"] = "Addendum added after the original."
+    return RedirectResponse(f"/encounters/{encounter_id}", status_code=303)
+
+
+# --- prescriptions --------------------------------------------------------
+
+
+@app.post("/clients/{client_id}/prescriptions")
+def prescription_new(client_id: int, request: Request, drug: str = F(""),
+                     strength: str = F(""), form_: str = F("", alias="form"),
+                     sig: str = F(""), quantity: str = F(""),
+                     refills: str = F("0"), days_supply: str = F(""),
+                     pharmacy: str = F(""), controlled: str = F(""),
+                     encounter_id: str = F(""), db: Session = Depends(get_db),
+                     _=Depends(needs(perms.PRESCRIBE))):
+    """Write a prescription. Behind PRESCRIBE, which an administrator does not have."""
+    client = get_or_404(db, Client, client_id)
+    me = auth.current_user(request, db)
+    if not drug.strip():
+        request.session["chart_error"] = "A prescription needs a drug name."
+        return RedirectResponse(f"/clients/{client_id}#rx", status_code=303)
+
+    rx = ehr.Prescription(
+        client_id=client.id, encounter_id=_int_or_none(encounter_id),
+        prescriber_id=getattr(me, "id", None),
+        drug=drug.strip()[:255], strength=strength.strip()[:64],
+        form=form_.strip()[:64], sig=sig.strip()[:500],
+        quantity=quantity.strip()[:64], refills=_int_or_none(refills) or 0,
+        days_supply=_int_or_none(days_supply), pharmacy=pharmacy.strip()[:255],
+        is_controlled=bool(controlled))
+    db.add(rx)
+    db.flush()
+    log(db, f"Prescription written: {rx.drug[:28]}", "client", client.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = (
+        f"{rx.display} saved as a draft. Sign it, then print it - this app "
+        f"does not send prescriptions to a pharmacy.")
+    return RedirectResponse(f"/clients/{client_id}#rx", status_code=303)
+
+
+@app.post("/prescriptions/{rx_id}/sign")
+def prescription_sign(rx_id: int, request: Request,
+                      db: Session = Depends(get_db),
+                      _=Depends(needs(perms.PRESCRIBE))):
+    rx = get_or_404(db, ehr.Prescription, rx_id)
+    me = auth.current_user(request, db)
+    if rx.is_signed:
+        return RedirectResponse(f"/clients/{rx.client_id}#rx", status_code=303)
+    rx.status = ehr.RxStatus.signed
+    rx.signed_at = datetime.utcnow()
+    rx.signed_by = (me.name if me else "")[:160]
+    log(db, f"Prescription signed: {rx.drug[:30]}", "client", rx.client_id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = (
+        f"{rx.display} signed by {rx.signed_by}. Print it to hand to the patient.")
+    return RedirectResponse(f"/clients/{rx.client_id}#rx", status_code=303)
+
+
+@app.get("/prescriptions/{rx_id}/print", response_class=HTMLResponse)
+def prescription_print(rx_id: int, request: Request,
+                      db: Session = Depends(get_db),
+                      _=Depends(needs(perms.PRESCRIBE))):
+    """The printable prescription, and a record that it was printed.
+
+    Printing is the closest thing to a transmission this app has, so it is
+    recorded: a prescriber asking "did this actually go out?" deserves an
+    answer, and the honest answer here is "a piece of paper was produced at
+    this time".
+    """
+    rx = get_or_404(db, ehr.Prescription, rx_id)
+    me = auth.current_user(request, db)
+    if not rx.is_signed:
+        request.session["chart_error"] = "Sign the prescription before printing it."
+        return RedirectResponse(f"/clients/{rx.client_id}#rx", status_code=303)
+    rx.printed_at = datetime.utcnow()
+    log(db, f"Prescription printed: {rx.drug[:29]}", "client", rx.client_id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    return render("prescription_print.html", ctx(
+        request, db, rx=rx, client=rx.client))
+
+
+@app.post("/prescriptions/{rx_id}/cancel")
+def prescription_cancel(rx_id: int, request: Request,
+                        db: Session = Depends(get_db),
+                        _=Depends(needs(perms.PRESCRIBE))):
+    rx = get_or_404(db, ehr.Prescription, rx_id)
+    rx.status = ehr.RxStatus.cancelled
+    log(db, f"Prescription cancelled: {rx.drug[:26]}", "client", rx.client_id,
+        user_id=getattr(auth.current_user(request, db), "id", None))
+    db.commit()
+    return RedirectResponse(f"/clients/{rx.client_id}#rx", status_code=303)
+
+
+# --- orders ---------------------------------------------------------------
+
+
+@app.post("/clients/{client_id}/orders")
+def order_new(client_id: int, request: Request, kind: str = F("lab"),
+              name: str = F(""), reason: str = F(""), priority: str = F("Routine"),
+              facility: str = F(""), db: Session = Depends(get_db),
+              _=Depends(needs(perms.CLINICAL_EDIT))):
+    client = get_or_404(db, Client, client_id)
+    me = auth.current_user(request, db)
+    if not name.strip():
+        request.session["chart_error"] = "An order needs a test or study name."
+        return RedirectResponse(f"/clients/{client_id}#orders", status_code=303)
+    order = ehr.Order(client_id=client.id, ordered_by_id=getattr(me, "id", None),
+                      kind=kind if kind in ("lab", "imaging") else "lab",
+                      name=name.strip()[:255], reason=reason.strip()[:255],
+                      priority=priority.strip()[:32] or "Routine",
+                      facility=facility.strip()[:255],
+                      status=ehr.OrderStatus.placed,
+                      placed_at=datetime.utcnow())
+    db.add(order)
+    db.flush()
+    log(db, f"Order placed: {order.name[:33]}", "client", client.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = (
+        f"{order.name} recorded. Print or hand the requisition over - this app "
+        f"does not transmit orders to a laboratory.")
+    return RedirectResponse(f"/clients/{client_id}#orders", status_code=303)
+
+
+@app.post("/orders/{order_id}/result")
+def order_result(order_id: int, request: Request, result: str = F(""),
+                 abnormal: str = F(""), db: Session = Depends(get_db),
+                 _=Depends(needs(perms.CLINICAL_EDIT))):
+    order = get_or_404(db, ehr.Order, order_id)
+    me = auth.current_user(request, db)
+    order.result_text = result.strip()
+    order.result_abnormal = bool(abnormal)
+    order.result_at = datetime.utcnow()
+    order.status = ehr.OrderStatus.resulted
+    #  Recording a result does not mark it reviewed. They are different acts by
+    #  possibly different people, and collapsing them is how a result is filed
+    #  as seen by nobody - which is the failure orders modules get sued over.
+    cache.drop("nav:unreviewed")
+    log(db, f"Result recorded: {order.name[:31]}", "client", order.client_id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    return RedirectResponse(f"/clients/{order.client_id}#orders", status_code=303)
+
+
+@app.post("/orders/{order_id}/reviewed")
+def order_reviewed(order_id: int, request: Request,
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.CLINICAL_EDIT))):
+    order = get_or_404(db, ehr.Order, order_id)
+    me = auth.current_user(request, db)
+    order.reviewed_by = (me.name if me else "")[:160]
+    order.reviewed_at = datetime.utcnow()
+    cache.drop("nav:unreviewed")
+    log(db, f"Result reviewed: {order.name[:31]}", "client", order.client_id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    return RedirectResponse(f"/clients/{order.client_id}#orders", status_code=303)
+
+
+@app.get("/results", response_class=HTMLResponse)
+def results_inbox(request: Request, db: Session = Depends(get_db),
+                  _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Results that arrived and nobody has said they have seen.
+
+    The one screen an orders module exists for. A result sitting unread is the
+    failure mode with real consequences, so it gets its own list rather than
+    living as a badge on somebody's chart.
+    """
+    waiting = (db.query(ehr.Order)
+               .filter(ehr.Order.status == ehr.OrderStatus.resulted,
+                       ehr.Order.reviewed_at.is_(None))
+               .order_by(ehr.Order.result_at).all())
+    return render("results.html", ctx(request, db, nav="results", orders=waiting))
+
+
+# --- charges --------------------------------------------------------------
+
+
+@app.post("/clients/{client_id}/charges")
+def charge_new(client_id: int, request: Request, cpt: str = F(""),
+               description: str = F(""), icd10: str = F(""), units: str = F("1"),
+               amount: str = F("0"), payer: str = F(""),
+               encounter_id: str = F(""), db: Session = Depends(get_db),
+               _=Depends(needs(perms.BILLING_EDIT))):
+    client = get_or_404(db, Client, client_id)
+    me = auth.current_user(request, db)
+    if not cpt.strip():
+        request.session["chart_error"] = "A charge needs a CPT code."
+        return RedirectResponse(f"/clients/{client_id}#billing", status_code=303)
+    try:
+        money = Decimal((amount or "0").strip() or "0")
+    except (InvalidOperation, ValueError):
+        money = Decimal("0")
+    charge = ehr.Charge(
+        client_id=client.id, encounter_id=_int_or_none(encounter_id),
+        cpt=cpt.strip()[:16], description=description.strip()[:255],
+        icd10=icd10.strip()[:120], units=_int_or_none(units) or 1,
+        amount=money, payer=payer.strip()[:160])
+    db.add(charge)
+    db.flush()
+    log(db, f"Charge coded: {charge.cpt}", "client", client.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = f"Charge {charge.cpt} added."
+    return RedirectResponse(f"/clients/{client_id}#billing", status_code=303)
+
+
+@app.post("/charges/{charge_id}/status")
+def charge_status(charge_id: int, request: Request, status: str = F(""),
+                  paid: str = F(""), db: Session = Depends(get_db),
+                  _=Depends(needs(perms.BILLING_EDIT))):
+    charge = get_or_404(db, ehr.Charge, charge_id)
+    me = auth.current_user(request, db)
+    try:
+        charge.status = ehr.ChargeStatus(status)
+    except ValueError:
+        return RedirectResponse(f"/clients/{charge.client_id}#billing",
+                                status_code=303)
+    if charge.status == ehr.ChargeStatus.submitted:
+        charge.submitted_at = datetime.utcnow()
+    if charge.status == ehr.ChargeStatus.paid:
+        try:
+            charge.paid_amount = Decimal((paid or "0").strip() or "0")
+        except (InvalidOperation, ValueError):
+            charge.paid_amount = charge.amount
+        charge.paid_at = datetime.utcnow()
+    log(db, f"Charge {charge.cpt} -> {charge.status.value}", "client",
+        charge.client_id, user_id=getattr(me, "id", None))
+    db.commit()
+    return RedirectResponse(f"/clients/{charge.client_id}#billing", status_code=303)
+
+
+def _date_or_none(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None

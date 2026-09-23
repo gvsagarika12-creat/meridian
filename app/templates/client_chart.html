@@ -138,6 +138,234 @@
       </section>
       {% endif %}
 
+      <section class="card" id="notes">
+        <h2>&#128221; Clinical notes</h2>
+        {% for e in encounters %}
+        <div class="line"><span>
+          <a href="/encounters/{{ e.id }}"><b>{{ e.template }}</b></a>
+          <span class="hint">&middot; {{ e.seen_on.strftime('%d %b %Y') }}
+            {%- if e.reason %} &middot; {{ e.reason }}{% endif %}</span></span>
+          {% if e.is_signed %}
+          <span class="src-tag synced" title="Signed by {{ e.signed_by }}">signed</span>
+          {% else %}<span class="src-tag typed">draft</span>{% endif %}
+        </div>
+        {% else %}
+        <p class="hint">No notes yet.</p>
+        {% endfor %}
+        {% if can(user, P.CLINICAL_EDIT) %}
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          {% for t in ['SOAP', 'Psychiatric intake', 'Progress note', 'Free text'] %}
+          <a class="btn btn-sm {{ 'btn-green' if loop.first }}"
+             href="/clients/{{ client.id }}/encounters/new?template={{ t | urlencode }}">
+            &#10010; {{ t }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </section>
+
+      {% if can(user, P.PRESCRIBE) or prescriptions %}
+      <section class="card" id="rx">
+        <h2>&#8478; Prescriptions</h2>
+        <p class="hint" style="margin:0 0 11px">
+          Written, signed and printed here &mdash; <b>never transmitted</b>.
+          Sending to a pharmacy needs DEA EPCS certification, which this system
+          does not hold.</p>
+        {% for rx in prescriptions %}
+        <div class="line"><span>
+          <b>{{ rx.display }}</b>
+          {% if rx.is_controlled %}<span class="src-tag"
+            style="background:var(--bad-soft);color:var(--bad)">controlled</span>{% endif %}
+          <span class="hint">{% if rx.sig %}&middot; {{ rx.sig }}{% endif %}
+            &middot; {{ rx.refills }} refill{{ 's' if rx.refills != 1 }}
+            {%- if rx.printed_at %} &middot; printed{% endif %}</span></span>
+          <span>
+            {% if rx.status.value == 'draft' and can(user, P.PRESCRIBE) %}
+            <form class="inline" method="post" action="/prescriptions/{{ rx.id }}/sign">
+              <button class="btn btn-sm btn-green">Sign</button></form>
+            {% elif rx.is_signed and can(user, P.PRESCRIBE) %}
+            <a class="btn btn-sm" href="/prescriptions/{{ rx.id }}/print"
+               target="_blank" rel="noopener">Print</a>
+            {% endif %}
+            {% if rx.status.value == 'cancelled' %}
+            <span class="src-tag">cancelled</span>{% endif %}
+          </span>
+        </div>
+        {% else %}
+        <p class="hint">Nothing prescribed here yet.</p>
+        {% endfor %}
+
+        {% if can(user, P.PRESCRIBE) %}
+        <details style="margin-top:13px;border-top:1px solid var(--rule);padding-top:12px">
+          <summary style="cursor:pointer;font-weight:600;font-size:14.5px">
+            &#10010; Write a prescription</summary>
+          <form method="post" action="/clients/{{ client.id }}/prescriptions"
+                style="display:grid;gap:9px;margin-top:11px">
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <input type="text" name="drug" placeholder="Drug (required)" required
+                     style="flex:2;min-width:180px">
+              <input type="text" name="strength" placeholder="Strength" style="flex:1;min-width:90px">
+              <input type="text" name="form" placeholder="Form" style="flex:1;min-width:90px">
+            </div>
+            <input type="text" name="sig" placeholder="Sig - directions to the patient">
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <input type="text" name="quantity" placeholder="Quantity" style="flex:1;min-width:90px">
+              <input type="text" name="refills" inputmode="numeric" placeholder="Refills"
+                     value="0" style="width:90px">
+              <input type="text" name="days_supply" inputmode="numeric"
+                     placeholder="Days supply" style="width:120px">
+            </div>
+            <input type="text" name="pharmacy" placeholder="Pharmacy (optional)">
+            <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+              <input type="checkbox" name="controlled" value="1">
+              Controlled substance</label>
+            <button class="btn btn-sm btn-green" style="justify-self:start">
+              Save as draft</button>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if can(user, P.CLINICAL_EDIT) or orders %}
+      <section class="card" id="orders">
+        <h2>&#129514; Orders and results</h2>
+        <p class="hint" style="margin:0 0 11px">
+          Recorded and printed, <b>not transmitted</b> &mdash; sending to a
+          laboratory needs an interface contract and LOINC mapping.</p>
+        {% for o in orders %}
+        <div class="line"><span>
+          <b>{{ o.name }}</b>
+          <span class="hint">&middot; {{ o.kind }} &middot; {{ o.priority }}
+            {%- if o.reason %} &middot; {{ o.reason }}{% endif %}</span>
+          {% if o.result_abnormal %}<span class="src-tag"
+            style="background:var(--bad-soft);color:var(--bad)">abnormal</span>{% endif %}
+        </span>
+          <span>
+            {% if o.awaiting_review %}
+            <span class="src-tag" style="background:#fdf2dc;color:#7a5200">needs review</span>
+            {% elif o.reviewed_at %}
+            <span class="src-tag synced" title="Reviewed by {{ o.reviewed_by }}">reviewed</span>
+            {% else %}<span class="src-tag typed">{{ o.status.value }}</span>{% endif %}
+          </span>
+        </div>
+        {% if o.result_text %}
+        <div class="hint" style="white-space:pre-wrap;margin:2px 0 9px 4px;
+             border-left:2px solid var(--rule);padding-left:10px">{{ o.result_text }}</div>
+        {% endif %}
+        {% if can(user, P.CLINICAL_EDIT) %}
+          {% if o.awaiting_review %}
+          <form class="inline" method="post" action="/orders/{{ o.id }}/reviewed"
+                style="margin:0 0 10px 4px">
+            <button class="btn btn-sm btn-green">Mark reviewed</button></form>
+          {% elif not o.result_text %}
+          <form method="post" action="/orders/{{ o.id }}/result"
+                style="display:flex;gap:8px;margin:0 0 10px 4px;flex-wrap:wrap">
+            <input type="text" name="result" placeholder="Record the result"
+                   style="flex:1;min-width:200px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13.5px">
+              <input type="checkbox" name="abnormal" value="1"> abnormal</label>
+            <button class="btn btn-sm">Save result</button>
+          </form>
+          {% endif %}
+        {% endif %}
+        {% else %}
+        <p class="hint">Nothing ordered yet.</p>
+        {% endfor %}
+
+        {% if can(user, P.CLINICAL_EDIT) %}
+        <details style="margin-top:13px;border-top:1px solid var(--rule);padding-top:12px">
+          <summary style="cursor:pointer;font-weight:600;font-size:14.5px">
+            &#10010; Place an order</summary>
+          <form method="post" action="/clients/{{ client.id }}/orders"
+                style="display:grid;gap:9px;margin-top:11px">
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <select name="kind" style="width:130px">
+                <option value="lab">Lab</option><option value="imaging">Imaging</option>
+              </select>
+              <input type="text" name="name" placeholder="Test or study (required)"
+                     required style="flex:2;min-width:180px">
+              <select name="priority" style="width:130px">
+                <option>Routine</option><option>Urgent</option><option>STAT</option>
+              </select>
+            </div>
+            <input type="text" name="reason" placeholder="Clinical reason">
+            <input type="text" name="facility" placeholder="Facility (optional)">
+            <button class="btn btn-sm btn-green" style="justify-self:start">
+              Place the order</button>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if can(user, P.BILLING_EDIT) or charges %}
+      <section class="card" id="billing">
+        <h2>&#128179; Charges</h2>
+        <p class="hint" style="margin:0 0 11px">
+          Coded and tracked here. <b>Nothing is filed with a payer</b> &mdash;
+          claim submission needs a clearinghouse contract.</p>
+        {% for ch in charges %}
+        <div class="line"><span>
+          <b>{{ ch.cpt }}</b>
+          <span class="hint">{{ ch.description }}
+            {%- if ch.icd10 %} &middot; {{ ch.icd10 }}{% endif %}
+            &middot; {{ ch.service_on.strftime('%d %b %Y') }}</span></span>
+          <span style="font-variant-numeric:tabular-nums">
+            {{ '%.2f' | format(ch.amount|float) }}
+            <span class="src-tag {{ 'synced' if ch.status.value == 'paid' else 'typed' }}"
+              >{{ ch.status.value.replace('_', ' ') }}</span>
+          </span>
+        </div>
+        {% if can(user, P.BILLING_EDIT) and ch.status.value in ('draft', 'ready', 'submitted') %}
+        <form class="inline" method="post" action="/charges/{{ ch.id }}/status"
+              style="margin:0 0 9px 4px">
+          <select name="status" style="width:150px">
+            <option value="ready">ready</option>
+            <option value="submitted">submitted</option>
+            <option value="paid">paid</option>
+            <option value="denied">denied</option>
+            <option value="written_off">written off</option>
+          </select>
+          <input type="text" name="paid" placeholder="paid amt" style="width:100px">
+          <button class="btn btn-sm">Update</button>
+        </form>
+        {% endif %}
+        {% else %}
+        <p class="hint">Nothing billed yet.</p>
+        {% endfor %}
+
+        {% if can(user, P.BILLING_EDIT) %}
+        <details style="margin-top:13px;border-top:1px solid var(--rule);padding-top:12px">
+          <summary style="cursor:pointer;font-weight:600;font-size:14.5px">
+            &#10010; Add a charge</summary>
+          <form method="post" action="/clients/{{ client.id }}/charges"
+                style="display:grid;gap:9px;margin-top:11px">
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <input type="text" name="cpt" placeholder="CPT" required list="cpts"
+                     style="width:110px">
+              <datalist id="cpts">
+                {% for code, desc in COMMON_CPT %}
+                <option value="{{ code }}">{{ code }} - {{ desc }}</option>
+                {% endfor %}
+              </datalist>
+              <input type="text" name="description" placeholder="Description"
+                     style="flex:2;min-width:180px">
+              <input type="text" name="amount" inputmode="decimal" placeholder="Amount"
+                     style="width:110px">
+            </div>
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <input type="text" name="icd10" placeholder="ICD-10 codes, comma separated"
+                     style="flex:1;min-width:180px">
+              <input type="text" name="payer" placeholder="Payer" style="flex:1;min-width:140px">
+              <input type="text" name="units" value="1" style="width:70px">
+            </div>
+            <button class="btn btn-sm btn-green" style="justify-self:start">Add charge</button>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+      {% endif %}
+
       {% if can(user, P.CLINICAL_EDIT) %}
       <section class="card" id="tebra">
         <h2>&#129525; Tebra chart</h2>

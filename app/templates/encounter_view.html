@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Note &mdash; {{ client.name }}{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/clients">All Patients</a>
+  <span class="sep">&rsaquo;</span><a href="/clients/{{ client.id }}">{{ client.name }}</a>
+  <span class="sep">&rsaquo;</span>Clinical note</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap" style="max-width:880px">
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ note }}</div>
+{% endif %}
+{% if error %}
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+            color:var(--bad);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ error }}</div>
+{% endif %}
+
+<div class="panel">
+  <h2>{{ encounter.template }}
+    {% if encounter.is_signed %}
+      <span class="state ok">signed</span>
+    {% else %}
+      <span class="state untested">draft</span>
+    {% endif %}
+  </h2>
+  <div class="body">
+    <p class="hint" style="margin-top:0">
+      {{ client.name }} &middot; seen {{ encounter.seen_on.strftime('%d %b %Y') }}
+      {%- if encounter.reason %} &middot; {{ encounter.reason }}{% endif %}
+      {%- if encounter.provider %} &middot; {{ encounter.provider.name }}{% endif %}
+    </p>
+
+    {% if encounter.is_signed %}
+    <div style="background:var(--good-soft);border-left:3px solid var(--good);
+                color:var(--good);padding:11px 14px;margin:0 0 18px;font-size:14px">
+      Signed by <b>{{ encounter.signed_by }}</b> on
+      {{ encounter.signed_at.strftime('%d %b %Y at %H:%M') }} UTC.
+      This note is locked &mdash; corrections are added as an addendum below,
+      never by changing what was signed.
+    </div>
+    {% endif %}
+
+    {% for label, text in encounter.filled %}
+    <div style="margin-bottom:18px">
+      <b style="font-size:13px;text-transform:uppercase;letter-spacing:.5px;
+                color:var(--ink-3)">{{ label }}</b>
+      <div style="white-space:pre-wrap;line-height:1.65;margin-top:5px">{{ text }}</div>
+    </div>
+    {% else %}
+    <p class="hint">Nothing has been written in this note yet.</p>
+    {% endfor %}
+
+    {% for add in encounter.addenda %}
+    <div style="border-left:3px solid var(--warn,#c98a12);background:#fdf9f0;
+                padding:12px 15px;margin-top:14px">
+      <b style="font-size:13px">Addendum</b>
+      <span class="hint">&middot; {{ add.written_by }} &middot;
+        {{ add.written_at.strftime('%d %b %Y %H:%M') }} UTC</span>
+      <div style="white-space:pre-wrap;line-height:1.65;margin-top:6px">{{ add.body }}</div>
+    </div>
+    {% endfor %}
+
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:20px;
+                border-top:1px solid var(--rule);padding-top:15px">
+      {% if can(user, P.CLINICAL_EDIT) and not encounter.is_signed %}
+      <a class="btn btn-sm" href="/encounters/{{ encounter.id }}/edit">Edit</a>
+      <form class="inline" method="post" action="/encounters/{{ encounter.id }}/sign"
+            onsubmit="return confirm('Sign this note?\n\nSigned notes cannot be edited or unsigned. Corrections afterwards are added as an addendum.')">
+        <button class="btn btn-sm btn-green">Sign the note</button>
+      </form>
+      {% endif %}
+      <a class="btn btn-sm" href="/clients/{{ client.id }}">Back to chart</a>
+    </div>
+  </div>
+</div>
+
+{% if encounter.is_signed and can(user, P.CLINICAL_EDIT) %}
+<div class="panel" style="margin-top:20px">
+  <h2>Add an addendum</h2>
+  <div class="body">
+    <p class="hint" style="margin-top:0">
+      Recorded after the original with your name and the time. The signed note
+      itself does not change &mdash; a record that cannot show what it said
+      before an amendment is not one anybody can rely on.</p>
+    <form method="post" action="/encounters/{{ encounter.id }}/addendum">
+      <textarea name="body" rows="4" required
+                style="width:100%;font-family:inherit;font-size:14.5px;
+                       line-height:1.6;padding:11px"></textarea>
+      <button class="btn btn-sm btn-green" style="margin-top:10px">Add addendum</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

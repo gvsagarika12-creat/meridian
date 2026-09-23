@@ -1,0 +1,69 @@
+{% extends "patient_base.html" %}
+{% block title %}Prescription{% endblock %}
+{% block body %}
+<div style="max-width:660px;margin:0 auto;padding:28px 26px;font-size:14.5px;
+            line-height:1.6;color:#1f2933">
+
+  <div style="border-bottom:2px solid #1f2933;padding-bottom:12px;margin-bottom:20px">
+    <div style="font-size:19px;font-weight:700">{{ practice.name }}</div>
+    <div style="font-size:13px;color:#52606d">{{ practice.address }}
+      {%- if practice.phone %} &middot; {{ practice.phone }}{% endif %}</div>
+  </div>
+
+  <table style="width:100%;font-size:14px;margin-bottom:22px">
+    <tr><td style="width:150px;color:#52606d;padding:3px 0">Patient</td>
+        <td style="padding:3px 0"><b>{{ client.name }}</b></td></tr>
+    <tr><td style="color:#52606d;padding:3px 0">Date of birth</td>
+        <td style="padding:3px 0">{{ client.dob.strftime('%d %b %Y') if client.dob else '-' }}</td></tr>
+    <tr><td style="color:#52606d;padding:3px 0">Date written</td>
+        <td style="padding:3px 0">{{ rx.written_on.strftime('%d %b %Y') }}</td></tr>
+  </table>
+
+  <div style="border:1px solid #cbd2d9;border-radius:8px;padding:18px 20px;
+              margin-bottom:22px">
+    <div style="font-size:26px;font-weight:700;margin-bottom:4px">&#8478;</div>
+    <div style="font-size:18px;font-weight:600">{{ rx.display }}</div>
+    {% if rx.sig %}<div style="margin-top:9px"><b>Sig:</b> {{ rx.sig }}</div>{% endif %}
+    <table style="width:100%;margin-top:12px;font-size:14px">
+      {% if rx.quantity %}<tr><td style="width:150px;color:#52606d">Quantity</td>
+        <td>{{ rx.quantity }}</td></tr>{% endif %}
+      <tr><td style="color:#52606d">Refills</td><td>{{ rx.refills }}</td></tr>
+      {% if rx.days_supply %}<tr><td style="color:#52606d">Days supply</td>
+        <td>{{ rx.days_supply }}</td></tr>{% endif %}
+      <tr><td style="color:#52606d">Substitution</td>
+        <td>{{ 'permitted' if rx.substitution_allowed else 'dispense as written' }}</td></tr>
+      {% if rx.pharmacy %}<tr><td style="color:#52606d">Pharmacy</td>
+        <td>{{ rx.pharmacy }}</td></tr>{% endif %}
+    </table>
+  </div>
+
+  <div style="margin-top:34px;border-top:1px solid #1f2933;padding-top:9px">
+    <div style="font-size:15px"><b>{{ rx.signed_by }}</b></div>
+    <div style="font-size:12.5px;color:#52606d">
+      Signed {{ rx.signed_at.strftime('%d %b %Y at %H:%M') }} UTC
+      {%- if rx.prescriber %} &middot; {{ rx.prescriber.name }}{% endif %}</div>
+  </div>
+
+  {#  Said plainly on the document itself, not only on the screen that produced
+      it. A prescriber who believes this was routed electronically will not hand
+      the paper over, and the patient finds out at the pharmacy counter.  #}
+  <p style="margin-top:26px;font-size:12px;color:#52606d;border-top:1px dashed #cbd2d9;
+            padding-top:12px">
+    This prescription was <b>not transmitted electronically</b>. It must be
+    printed and given to the patient, or telephoned to the pharmacy.
+    {% if rx.is_controlled %}
+    <br><br><b>Controlled substance.</b> Electronic prescribing of controlled
+    substances requires DEA EPCS certification, which this system does not
+    hold. This copy must be handled under the practice's own controlled
+    substance procedure.
+    {% endif %}
+  </p>
+
+  <div class="no-print" style="margin-top:26px">
+    <button onclick="window.print()"
+            style="padding:9px 18px;font-size:14px;cursor:pointer">Print</button>
+    <a href="/clients/{{ client.id }}#rx" style="margin-left:10px">Back to chart</a>
+  </div>
+</div>
+<style>@media print { .no-print { display: none } }</style>
+{% endblock %}
