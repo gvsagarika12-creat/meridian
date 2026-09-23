@@ -32,6 +32,9 @@
     {% if can(user, P.SUBMISSIONS_VIEW) %}
     <a href="/submissions" class="{{ 'on' if nav=='submissions' }}"><i>✎</i>Submissions
       {% if unread %}<b class="count">{{ unread }}</b>{% endif %}</a>{% endif %}
+    {% if can(user, P.SUBMISSIONS_SEND) %}
+    <a href="/messages" class="{{ 'on' if nav=='messages' }}"><i>&#128172;</i>Messages
+      {% if unread_messages %}<b class="count">{{ unread_messages }}</b>{% endif %}</a>{% endif %}
     {% if can(user, P.CLIENTS_VIEW) %}
     <a href="/calendar" class="{{ 'on' if nav=='calendar' }}"><i>▣</i>Calendar
       {% if due %}<b class="count">{{ due }}</b>{% endif %}</a>{% endif %}

@@ -138,6 +138,87 @@
       </section>
       {% endif %}
 
+      {% if flash %}
+      <div class="panel" style="border-left:4px solid #2a7048;margin-bottom:20px">
+        <div class="body" style="padding:16px 19px">
+          <b>{{ flash.title }}</b>
+          <p class="hint" style="margin:8px 0 12px">Copy this now and give it to the
+             patient &mdash; it is shown once and never again.</p>
+          <table style="width:auto">
+            <tr><th style="padding-right:22px">Email</th>
+                <td style="font-family:monospace">{{ flash.email }}</td></tr>
+            <tr><th>Password</th>
+                <td style="font-family:monospace;font-size:16px;font-weight:700">{{ flash.password }}</td></tr>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if can(user, P.CLIENTS_EDIT) %}
+      <section class="card" id="portal">
+        <h2>&#128421; Patient portal</h2>
+        {% if client.portal_password_hash %}
+        <div class="line"><span>
+          <b>Access is on</b>
+          <span class="hint">&middot; issued {{ client.portal_issued_at.strftime('%d %b %Y') if client.portal_issued_at }}
+            {%- if client.portal_last_login %} &middot; last signed in {{ client.portal_last_login.strftime('%d %b %Y') }}
+            {%- else %} &middot; has not signed in yet{% endif %}</span></span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:9px">
+          <form class="inline" method="post" action="/clients/{{ client.id }}/portal/issue"
+                onsubmit="return confirm('Issue a new password? The old one stops working immediately.')">
+            <button class="btn btn-sm">Reissue password</button></form>
+          <form class="inline" method="post" action="/clients/{{ client.id }}/portal/revoke"
+                onsubmit="return confirm('Remove portal access for {{ client.first_name }}?')">
+            <button class="btn btn-sm">Revoke access</button></form>
+        </div>
+        {% else %}
+        <p class="hint" style="margin:0 0 11px">
+          {{ client.first_name }} cannot sign in to the patient portal.
+          {% if not client.email %}An email address is needed first.{% endif %}</p>
+        <form method="post" action="/clients/{{ client.id }}/portal/issue">
+          <button class="btn btn-sm btn-green" {{ 'disabled' if not client.email }}>
+            Issue portal access</button>
+        </form>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if can(user, P.SUBMISSIONS_SEND) %}
+      <section class="card" id="messages">
+        <h2>&#128172; Messages</h2>
+        {% if not client.portal_password_hash %}
+        <p class="hint" style="margin:0 0 11px">
+          {{ client.first_name }} does not have portal access, so they cannot
+          see replies sent here yet.</p>
+        {% endif %}
+        <div style="max-height:340px;overflow-y:auto;display:flex;
+                    flex-direction:column;gap:10px;margin-bottom:13px">
+          {% for m in message_thread %}
+          <div style="display:flex;{{ 'justify-content:flex-end' if not m.from_patient }}">
+            <div style="max-width:78%;padding:9px 13px;border-radius:9px;
+                        background:{{ '#eef2f2' if m.from_patient else '#dceefb' }}">
+              <div style="white-space:pre-wrap;font-size:14px">{{ m.body }}</div>
+              <div class="hint" style="margin-top:4px;font-size:11px">
+                {{ client.first_name if m.from_patient else (m.staff_user.name if m.staff_user else 'Staff') }}
+                &middot; {{ m.sent_at.strftime('%d %b, %H:%M') }}</div>
+            </div>
+          </div>
+          {% else %}
+          <p class="hint" style="margin:0">No messages yet.</p>
+          {% endfor %}
+        </div>
+        <form method="post" action="/clients/{{ client.id }}/messages"
+              style="display:grid;gap:8px">
+          <textarea name="body" rows="2" maxlength="2000" required
+                    placeholder="Reply to {{ client.first_name }}..."
+                    style="width:100%;font-family:inherit;font-size:14px;
+                           padding:9px;border:1px solid #ccd4da;border-radius:5px"></textarea>
+          <button class="btn btn-sm btn-green" style="justify-self:start">Send</button>
+        </form>
+      </section>
+      {% endif %}
+
       <section class="card" id="documents">
         <h2>&#128206; Documents</h2>
         {% for d in documents %}

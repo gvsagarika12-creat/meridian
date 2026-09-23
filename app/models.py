@@ -319,6 +319,16 @@ class Client(Base):
     tebra_patient_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True, unique=True, index=True)
 
+    # The patient portal - see app/portal.py. Nullable, the same way
+    # hospital_id is: no hash means no access, and the absence of a row of its
+    # own is the fact that matters, not a separate enabled flag that could say
+    # one thing while the hash says another. Portal login is by email, so a
+    # client with no email cannot be issued portal access at all - there would
+    # be nothing to type into the login box.
+    portal_password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    portal_issued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    portal_last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # The hospital's own patient number - the same number Tebra and the archive
     # use. Not this table's primary key and deliberately not a foreign key: it
     # is issued by another system, it is the only thing the two systems share,
@@ -606,6 +616,7 @@ from . import ehr  # noqa: E402,F401
 from . import documents  # noqa: E402,F401
 from . import broadcasts  # noqa: E402,F401
 from . import mfa  # noqa: E402,F401
+from . import portal  # noqa: E402,F401
 from . import hospital  # noqa: E402,F401
 from . import trials  # noqa: E402,F401
 from . import schedule  # noqa: E402,F401

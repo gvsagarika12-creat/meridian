@@ -50,7 +50,13 @@ LOCKOUT = timedelta(minutes=15)
 
 # Paths reachable without a session. Everything else requires one.
 PUBLIC_PREFIXES = ("/login", "/logout", "/static/", "/f/", "/setup",
-                   "/forgot", "/reset/", "/request-access", "/register")
+                   "/forgot", "/reset/", "/request-access", "/register",
+                   # The patient portal runs its own, entirely separate
+                   # authentication - see app/portal.py. This middleware
+                   # checks for "uid", a staff session; a patient is never
+                   # going to have one, and must not be redirected into the
+                   # staff login trying to reach their own.
+                   "/portal")
 
 # email -> (failed count, first failure time). In-process; a multi-worker
 # deployment needs this in the database or a shared cache instead.

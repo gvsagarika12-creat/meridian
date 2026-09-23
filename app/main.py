@@ -44,6 +44,7 @@ from . import integrations
 from . import intakeq
 from . import broadcasts
 from . import mfa
+from . import portal
 from . import documents
 from . import ehr
 from . import simulation
@@ -107,6 +108,12 @@ class _StripMount:
 # OUTERMOST, so SessionMiddleware must be registered after auth_middleware in
 # order to run before it. Reversed, the auth check sees no request.session at all.
 app.middleware("http")(auth.auth_middleware)
+#  Same session, same cookie, a completely separate check: this middleware
+#  only ever looks at "/portal" paths and the "patient_id" key, auth_middleware
+#  only ever looks at everything else and "uid" - see app/portal.py's module
+#  docstring for why that separation, not a second cookie, is what actually
+#  keeps the two identities from being confused.
+app.middleware("http")(portal.portal_auth_middleware)
 app.add_middleware(SessionMiddleware, secret_key=auth.session_secret(),
                    session_cookie="mbh_session", https_only=False, same_site="lax")
 
@@ -255,6 +262,15 @@ def ctx(request: Request, db: Session, **extra) -> dict:
             lambda: db.query(ehr.Order).filter(
                 ehr.Order.status == ehr.OrderStatus.resulted,
                 ehr.Order.reviewed_at.is_(None)).count()),
+        #  Patients with an unread message. Counted as distinct clients, not
+        #  raw message rows, so a patient who sent three messages in a row
+        #  shows as one badge, not three - the number a staff member actually
+        #  wants is "how many people are waiting on me".
+        "unread_messages": cache.get_or_set(
+            "nav:unread_messages",
+            lambda: db.query(portal.PatientMessage.client_id)
+                      .filter_by(sender_role="patient", read_by_staff_at=None)
+                      .distinct().count()),
         # The Connections screen resolves each credential through the database,
         # so the template needs the session it was rendered with.
         "db": db,
@@ -1397,6 +1413,17 @@ def client_chart(client_id: int, request: Request, db: Session = Depends(get_db)
     """The facesheet: medications, problems, vitals, allergies, history, forms."""
     client = get_or_404(db, Client, client_id)
     log(db, "Chart Viewed", "client", client_id)
+
+    #  Opening the chart is when a patient's messages count as read by staff -
+    #  the mirror of what opening /portal/messages already does on their side.
+    thread = (db.query(portal.PatientMessage).filter_by(client_id=client.id)
+              .order_by(portal.PatientMessage.id).all())
+    now = datetime.utcnow()
+    for m in thread:
+        if m.from_patient and m.read_by_staff_at is None:
+            m.read_by_staff_at = now
+    if any(m.from_patient and m.read_by_staff_at == now for m in thread):
+        cache.drop("nav:unread_messages")
     db.commit()
     archive = records_for(db, client.hospital_id)
     return render("client_chart.html", ctx(
@@ -1408,6 +1435,8 @@ def client_chart(client_id: int, request: Request, db: Session = Depends(get_db)
                        .order_by(schedule.Appointment.on_day.desc()).all(),
         chart_error=request.session.pop("chart_error", ""),
         chart_note=request.session.pop("chart_note", ""),
+        flash=request.session.pop("flash", None),
+        message_thread=thread,
         #  Paperwork this patient completed in IntakeQ before they were ever a
         #  row here. Listed beside the forms sent from this app on purpose: to
         #  the person reading the chart they are the same thing, and which
@@ -4077,3 +4106,243 @@ def broadcast_detail(broadcast_id: int, request: Request,
     return render("broadcast_detail.html", ctx(
         request, db, nav="broadcasts", record=record,
         note=request.session.pop("broadcast_note", "")))
+
+
+# ------------------------------------------------------------------- portal
+#
+# The patient's own dashboard. Entirely separate auth from staff - see
+# app/portal.py's module docstring for why that is structural, not a
+# convention somebody has to remember to follow.
+
+
+@app.get("/portal/login", response_class=HTMLResponse)
+def portal_login(request: Request, timeout: int = 0):
+    return render("portal_login.html", {
+        "request": request, "practice": config.load(), "error": "",
+        "notice": "You were signed out after 15 minutes of inactivity."
+                  if timeout else "", "email": ""})
+
+
+@app.post("/portal/login")
+def portal_login_submit(request: Request, email: str = F(""),
+                        password: str = F(""), db: Session = Depends(get_db)):
+    def fail(message: str):
+        return render("portal_login.html", {
+            "request": request, "practice": config.load(), "error": message,
+            "notice": "", "email": email})
+
+    lock_key = portal.LOCKOUT_PREFIX + email.strip().lower()
+    remaining = auth.is_locked(lock_key)
+    if remaining:
+        mins = max(1, int(remaining.total_seconds() // 60))
+        return fail(f"Too many failed attempts. Try again in {mins} minute(s).")
+
+    client = (db.query(Client)
+              .filter(Client.email == email.strip().lower(),
+                      Client.archived.is_(False)).first())
+    ok = (client and client.portal_password_hash
+         and auth.verify_password(password, client.portal_password_hash))
+    if not ok:
+        auth.record_failure(lock_key)
+        log(db, "Portal login failed", "client",
+            client.id if client else email, ip=client_ip(request))
+        db.commit()
+        # Identical message whether the email is unknown or the password is
+        # wrong, the same reasoning as the staff login - this cannot be used
+        # to learn who has portal access.
+        return fail("Email or password is incorrect.")
+
+    auth.clear_failures(lock_key)
+    portal.sign_in(request, client)
+    client.portal_last_login = datetime.utcnow()
+    log(db, "Portal login", "client", client.id, ip=client_ip(request))
+    db.commit()
+    return RedirectResponse("/portal", status_code=303)
+
+
+@app.get("/portal/logout")
+def portal_logout(request: Request):
+    portal.sign_out(request)
+    return RedirectResponse("/portal/login", status_code=303)
+
+
+def _portal_client(request: Request, db: Session) -> Client:
+    """The signed-in patient, or a 401.
+
+    A 401 rather than a redirect: every route below is already behind
+    portal_auth_middleware, which redirects when there is no session at all.
+    Reaching here with no patient found means the session named somebody
+    whose row is gone (an admin deleted the client mid-session) - a real, if
+    rare, edge case that deserves a clear failure rather than presenting one
+    patient's dashboard as another's by silently falling through.
+    """
+    client = portal.current_patient(request, db)
+    if client is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return client
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_home(request: Request, db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    appts = (db.query(schedule.Appointment).filter_by(client_id=client.id)
+             .order_by(schedule.Appointment.on_day.desc()).all())
+    return render("portal_home.html", {
+        "request": request, "practice": config.load(), "client": client, "nav": "home",
+        "next_appt": portal.next_appointment(appts),
+        "active_meds": client.active_medications,
+        "unread": portal.unread_message_count(db, client.id),
+        "open_forms": [s for s in client.submissions_list if s.is_open],
+    })
+
+
+@app.get("/portal/medications", response_class=HTMLResponse)
+def portal_medications(request: Request, db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    return render("portal_medications.html", {
+        "request": request, "practice": config.load(), "client": client, "nav": "medications",
+        "unread": portal.unread_message_count(db, client.id),
+        "active": client.active_medications,
+        "past": [m for m in client.medications if not m.is_active],
+    })
+
+
+@app.get("/portal/appointments", response_class=HTMLResponse)
+def portal_appointments(request: Request, db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    today = date.today()
+    appts = (db.query(schedule.Appointment).filter_by(client_id=client.id)
+             .order_by(schedule.Appointment.on_day.desc()).all())
+    return render("portal_appointments.html", {
+        "request": request, "practice": config.load(), "client": client, "nav": "appointments",
+        "unread": portal.unread_message_count(db, client.id),
+        "upcoming": [a for a in appts if a.on_day >= today],
+        "past": [a for a in appts if a.on_day < today],
+    })
+
+
+@app.get("/portal/forms", response_class=HTMLResponse)
+def portal_forms(request: Request, db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    return render("portal_forms.html", {
+        "request": request, "practice": config.load(), "client": client, "nav": "forms",
+        "unread": portal.unread_message_count(db, client.id),
+        "submissions": sorted(client.submissions_list,
+                              key=lambda s: s.sent_at, reverse=True),
+    })
+
+
+@app.get("/portal/messages", response_class=HTMLResponse)
+def portal_messages(request: Request, db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    thread = (db.query(portal.PatientMessage).filter_by(client_id=client.id)
+              .order_by(portal.PatientMessage.id).all())
+    #  Opening the thread is when staff messages count as read - the same
+    #  moment a phone call would count as having been answered.
+    now = datetime.utcnow()
+    for m in thread:
+        if not m.from_patient and m.read_by_patient_at is None:
+            m.read_by_patient_at = now
+    db.commit()
+    return render("portal_messages.html", {
+        "request": request, "practice": config.load(), "client": client, "nav": "messages",
+        "unread": 0, "thread": thread, "max_len": portal.MAX_MESSAGE_LENGTH})
+
+
+@app.post("/portal/messages")
+def portal_messages_send(request: Request, body: str = F(""),
+                         db: Session = Depends(get_db)):
+    client = _portal_client(request, db)
+    text = body.strip()[:portal.MAX_MESSAGE_LENGTH]
+    if text:
+        db.add(portal.PatientMessage(client_id=client.id, sender_role="patient",
+                                     body=text))
+        cache.drop("nav:unread_messages")
+        log(db, "Portal message sent", "client", client.id, ip=client_ip(request))
+        db.commit()
+    return RedirectResponse("/portal/messages", status_code=303)
+
+
+# --------------------------------------------------------- staff side of the portal
+
+
+@app.post("/clients/{client_id}/portal/issue")
+def portal_issue(client_id: int, request: Request, db: Session = Depends(get_db),
+                 actor: User = Depends(needs(perms.CLIENTS_EDIT))):
+    """Issue portal access, or reissue a fresh password over the old one.
+
+    Requires an email on file - there is nothing else a patient could type
+    into the login box - and the generated password is shown exactly once,
+    the same flash-and-forget pattern already used for a new staff account.
+    """
+    client = get_or_404(db, Client, client_id)
+    if not (client.email or "").strip():
+        request.session["chart_error"] = (
+            f"{client.first_name} has no email on file. The portal is "
+            f"reached by email and password, so one is needed before access "
+            f"can be issued.")
+        return RedirectResponse(f"/clients/{client_id}#portal", status_code=303)
+
+    password = um.temp_password()
+    client.portal_password_hash = auth.hash_password(password)
+    client.portal_issued_at = datetime.utcnow()
+    log(db, "Portal access issued", "client", client.id,
+        user_id=actor.id, ip=client_ip(request))
+    db.commit()
+    request.session["flash"] = {
+        "title": f"Portal access for {client.name}",
+        "email": client.email, "password": password,
+    }
+    return RedirectResponse(f"/clients/{client_id}#portal", status_code=303)
+
+
+@app.post("/clients/{client_id}/portal/revoke")
+def portal_revoke(client_id: int, request: Request, db: Session = Depends(get_db),
+                  actor: User = Depends(needs(perms.CLIENTS_EDIT))):
+    client = get_or_404(db, Client, client_id)
+    client.portal_password_hash = None
+    log(db, "Portal access revoked", "client", client.id,
+        user_id=actor.id, ip=client_ip(request))
+    db.commit()
+    request.session["chart_note"] = f"Portal access removed for {client.first_name}."
+    return RedirectResponse(f"/clients/{client_id}#portal", status_code=303)
+
+
+@app.post("/clients/{client_id}/messages")
+def staff_message_send(client_id: int, request: Request, body: str = F(""),
+                       db: Session = Depends(get_db),
+                       actor: User = Depends(needs(perms.SUBMISSIONS_SEND))):
+    client = get_or_404(db, Client, client_id)
+    text = body.strip()[:portal.MAX_MESSAGE_LENGTH]
+    if text:
+        db.add(portal.PatientMessage(client_id=client.id, sender_role="staff",
+                                     staff_user_id=actor.id, body=text))
+        log(db, "Message sent to patient", "client", client.id,
+            user_id=actor.id, ip=client_ip(request))
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}#messages", status_code=303)
+
+
+@app.get("/messages", response_class=HTMLResponse)
+def staff_messages_inbox(request: Request, db: Session = Depends(get_db),
+                         _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    """Every patient with an unread message, most recent first.
+
+    The same shape as /results: a thread nobody has opened is the failure
+    with real consequences, so it gets its own screen rather than a badge
+    buried on a chart nobody happened to open today.
+    """
+    unread_client_ids = (
+        db.query(portal.PatientMessage.client_id)
+        .filter_by(sender_role="patient", read_by_staff_at=None)
+        .distinct().all())
+    ids = [row[0] for row in unread_client_ids]
+    clients = (db.query(Client).filter(Client.id.in_(ids)).all() if ids else [])
+    rows = []
+    for c in clients:
+        last = (db.query(portal.PatientMessage).filter_by(client_id=c.id)
+                .order_by(portal.PatientMessage.id.desc()).first())
+        rows.append({"client": c, "last": last})
+    rows.sort(key=lambda r: r["last"].sent_at, reverse=True)
+    return render("messages_inbox.html", ctx(
+        request, db, nav="messages", rows=rows))

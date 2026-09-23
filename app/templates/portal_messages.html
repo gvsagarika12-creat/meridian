@@ -1,0 +1,37 @@
+{% extends "portal_base.html" %}
+{% block body %}
+<h1 style="font-size:24px;margin:0 0 8px">Messages</h1>
+<p class="hint" style="margin:0 0 20px">
+  A real member of your care team reads and answers these &mdash; usually
+  within one to two business days. For anything urgent, call us at
+  {{ practice.phone }}. For an emergency, call 911.
+</p>
+
+<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;
+            padding:18px;margin-bottom:16px;max-height:480px;overflow-y:auto;
+            display:flex;flex-direction:column;gap:12px">
+  {% for m in thread %}
+  <div style="display:flex;{{ 'justify-content:flex-end' if m.from_patient }}">
+    <div style="max-width:78%;padding:10px 14px;border-radius:10px;
+                background:{{ '#dceefb' if m.from_patient else '#eef2f2' }};
+                {{ 'border-bottom-right-radius:2px' if m.from_patient
+                   else 'border-bottom-left-radius:2px' }}">
+      <div style="white-space:pre-wrap;font-size:14.5px">{{ m.body }}</div>
+      <div class="hint" style="margin-top:5px;font-size:11.5px">
+        {{ 'You' if m.from_patient else (m.staff_user.name if m.staff_user else 'Care team') }}
+        &middot; {{ m.sent_at.strftime('%d %b, %H:%M') }}</div>
+    </div>
+  </div>
+  {% else %}
+  <p class="hint" style="margin:0">No messages yet. Send the first one below.</p>
+  {% endfor %}
+</div>
+
+<form method="post" action="/portal/messages" style="display:grid;gap:10px">
+  <textarea name="body" rows="3" maxlength="{{ max_len }}" required
+            placeholder="e.g. I have a question about a medication I was prescribed..."
+            style="width:100%;font-family:inherit;font-size:14.5px;line-height:1.5;
+                   padding:11px;border:1px solid #ccd4da;border-radius:6px"></textarea>
+  <button class="btn btn-green" style="justify-self:start">Send</button>
+</form>
+{% endblock %}

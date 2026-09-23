@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ practice.name }} &mdash; My Health</title>
+<link rel="stylesheet" href="/static/app.css"></head>
+<body style="background:#f7f9f9">
+
+<div style="background:#1c5a6e;color:#fff;padding:14px 22px;display:flex;
+            align-items:center;gap:18px;flex-wrap:wrap">
+  <b style="font-size:17px">{{ practice.name }}</b>
+  <nav style="display:flex;gap:4px;margin-left:10px;flex-wrap:wrap">
+    <a href="/portal" style="color:#fff;padding:7px 12px;border-radius:5px;
+       text-decoration:none;{{ 'background:rgba(255,255,255,.18)' if nav=='home' }}">Home</a>
+    <a href="/portal/medications" style="color:#fff;padding:7px 12px;border-radius:5px;
+       text-decoration:none;{{ 'background:rgba(255,255,255,.18)' if nav=='medications' }}">Medications</a>
+    <a href="/portal/appointments" style="color:#fff;padding:7px 12px;border-radius:5px;
+       text-decoration:none;{{ 'background:rgba(255,255,255,.18)' if nav=='appointments' }}">Appointments</a>
+    <a href="/portal/forms" style="color:#fff;padding:7px 12px;border-radius:5px;
+       text-decoration:none;{{ 'background:rgba(255,255,255,.18)' if nav=='forms' }}">Forms</a>
+    <a href="/portal/messages" style="color:#fff;padding:7px 12px;border-radius:5px;
+       text-decoration:none;position:relative;{{ 'background:rgba(255,255,255,.18)' if nav=='messages' }}">
+      Messages
+      {% if unread %}<span style="background:#c0392b;color:#fff;font-size:11px;
+        font-weight:700;padding:1px 6px;border-radius:8px;margin-left:5px">{{ unread }}</span>{% endif %}
+    </a>
+  </nav>
+  <span style="margin-left:auto;font-size:14px;opacity:.9">{{ client.name }}</span>
+  <a href="/portal/logout" style="color:#fff;font-size:14px">Sign out</a>
+</div>
+
+<div style="max-width:760px;margin:0 auto;padding:26px 20px 60px">
+  {% block body %}{% endblock %}
+</div>
+
+<p class="hint" style="text-align:center;padding:0 20px 30px;max-width:760px;
+   margin:0 auto">
+  For a medical emergency, call 911 or go to your nearest emergency room.
+  Messages sent here are read by staff during business hours, not monitored
+  in real time. Sessions end automatically after 15 minutes of inactivity.
+</p>
+</body></html>

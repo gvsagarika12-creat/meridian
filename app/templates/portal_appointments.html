@@ -1,0 +1,31 @@
+{% extends "portal_base.html" %}
+{% block body %}
+<h1 style="font-size:24px;margin:0 0 20px">Appointments</h1>
+
+<div style="background:#fff;border:1px solid var(--rule);border-radius:8px;
+            padding:18px;margin-bottom:16px">
+  <h2 style="margin:0 0 12px;font-size:16px">Upcoming</h2>
+  {% for a in upcoming %}
+  <div style="padding:10px 0;border-top:1px solid var(--rule)">
+    <b>{{ a.on_day.strftime('%A, %d %B %Y') }}</b>{{ ' at ' ~ a.at_time if a.at_time }}
+    <div class="hint">{{ a.kind }}
+      {%- if a.provider %} with {{ a.provider.name }}{% endif %}
+      {%- if a.location %} &middot; {{ a.location }}{% endif %}</div>
+  </div>
+  {% else %}
+  <p class="hint" style="margin:0">Nothing scheduled. Call us to book a visit.</p>
+  {% endfor %}
+</div>
+
+{% if past %}
+<details style="background:#fff;border:1px solid var(--rule);border-radius:8px;padding:18px">
+  <summary style="cursor:pointer;font-size:16px;font-weight:600">Past appointments</summary>
+  {% for a in past[:20] %}
+  <div style="padding:9px 0;border-top:1px solid var(--rule)">
+    <span class="hint">{{ a.on_day.strftime('%d %b %Y') }} &middot; {{ a.kind }}
+      &middot; {{ a.status.value }}</span>
+  </div>
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}
