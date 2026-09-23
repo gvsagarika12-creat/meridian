@@ -22,6 +22,10 @@
 </div>
 {% endif %}
 
+{% if note %}
+<div style="background:#e5f1ea;border-left:3px solid #2a7048;color:#1e5636;
+            padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ note }}</div>
+{% endif %}
 {% if error %}
 <div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
             padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ error }}</div>
@@ -105,7 +109,7 @@
     <div class="scroll" style="overflow-x:auto">
     <table>
       <tr><th>Name</th><th>Email</th><th style="min-width:150px">Role</th>
-          <th>Status</th><th>Last sign-in</th><th></th></tr>
+          <th>Status</th><th>MFA</th><th>Last sign-in</th><th></th></tr>
       {% for u in staff %}
       <tr {{ 'style=opacity:.55' if not u.is_active }}>
         <td>{{ u.name }}
@@ -127,11 +131,19 @@
         </td>
         <td>{% if u.is_active %}<span style="color:#2a7048">active</span>
             {% else %}<span class="hint">inactive</span>{% endif %}</td>
+        <td>{% if u.mfa_enabled %}<span style="color:#2a7048">on</span>
+            {% else %}<span class="hint">off</span>{% endif %}</td>
         <td>{{ u.last_login|ago if u.last_login else 'never' }}</td>
         <td style="white-space:nowrap">
           {% if u.is_active %}
           <form class="inline" method="post" action="/users/{{ u.id }}/reset">
             <button class="btn btn-sm">Reset password</button>
+          </form>
+          {% endif %}
+          {% if u.mfa_enabled %}
+          <form class="inline" method="post" action="/users/{{ u.id }}/mfa-reset"
+                onsubmit="return confirm('Turn off two-factor authentication for {{ u.name }}?\n\nThey will need to set it up again from their own Account page.')">
+            <button class="btn btn-sm">Reset MFA</button>
           </form>
           {% endif %}
           <form class="inline" method="post" action="/users/{{ u.id }}/active">

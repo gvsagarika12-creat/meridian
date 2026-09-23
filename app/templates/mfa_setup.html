@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Set up two-factor authentication{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span><a href="/account">My Account</a>
+<span class="sep">&rsaquo;</span>Two-factor authentication</div>{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:560px">
+  <h2>&#128272; Set up two-factor authentication</h2>
+  <div class="body">
+    {% if error %}<div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+      padding:11px 15px;margin-bottom:16px;font-size:14.5px">{{ error }}</div>{% endif %}
+
+    <p style="margin-top:0">
+      Add this account to your authenticator app (Google Authenticator, Authy,
+      1Password, or similar), then enter the six-digit code it shows.</p>
+
+    <p class="hint" style="margin-bottom:6px"><b>Setup key</b> &mdash; use "enter
+      a setup key manually" in your app if you cannot scan a code:</p>
+    <p style="font-family:monospace;font-size:16px;letter-spacing:2px;
+              background:#f7f9f9;padding:11px 14px;border-radius:6px;
+              word-break:break-all;margin:0 0 16px">{{ secret }}</p>
+
+    <details style="margin-bottom:18px">
+      <summary style="cursor:pointer;font-size:13.5px;color:var(--ink-2)">
+        Show the raw setup link instead</summary>
+      <p style="font-size:12px;word-break:break-all;margin-top:8px;
+                color:var(--ink-2)">{{ uri }}</p>
+    </details>
+
+    <form method="post" action="/account/mfa/confirm" style="display:grid;gap:14px">
+      <label>Code from your app
+        <input type="text" name="code" inputmode="numeric" pattern="[0-9]*"
+               maxlength="6" required autofocus
+               style="width:100%;padding:10px;border:1px solid #ccd4da;
+                      border-radius:3px;font-size:18px;letter-spacing:4px;
+                      text-align:center;max-width:180px"></label>
+      <div>
+        <button class="btn btn-green">Turn on two-factor authentication</button>
+        <a href="/account" class="btn" style="margin-left:8px">Cancel</a>
+      </div>
+    </form>
+
+    <p class="hint" style="margin-top:18px">
+      You will be shown ten backup codes once this is confirmed. Save them
+      somewhere other than this computer &mdash; they are what gets you back in
+      if your phone is lost.</p>
+  </div>
+</div>
+{% endblock %}

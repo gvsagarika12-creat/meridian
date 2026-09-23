@@ -161,6 +161,48 @@ def sign_in(request: Request, user: User) -> None:
     request.session["seen"] = datetime.utcnow().isoformat()
 
 
+# ---------------------------------------------------------------- MFA pending
+#
+# A user whose password verified but whose second factor has not is not signed
+# in - `current_user()` reads only "uid", never "pending_mfa_uid", so a request
+# in this state is indistinguishable from an anonymous one everywhere except
+# the one route that checks for it. That is the entire safety property this
+# state exists for: a bug anywhere else in the app cannot accidentally treat a
+# pending login as an authenticated one, because nothing else knows to look.
+
+PENDING_MFA_TIMEOUT = timedelta(minutes=5)
+
+
+def begin_mfa_challenge(request: Request, user: User) -> None:
+    """Password verified; waiting on a code. Grants nothing by itself."""
+    request.session.clear()
+    request.session["pending_mfa_uid"] = user.id
+    request.session["pending_mfa_at"] = datetime.utcnow().isoformat()
+
+
+def pending_mfa_user(request: Request, db: Session) -> User | None:
+    """Who is mid-login, or None if nobody is, or the wait ran out.
+
+    Timed independently of the idle-session clock, and much shorter: five
+    minutes is enough to find a phone and read a code off it, and an
+    indefinitely-open half-login is a state with a password already proven
+    and no reason to leave it standing.
+    """
+    uid = request.session.get("pending_mfa_uid")
+    started = request.session.get("pending_mfa_at")
+    if not uid or not started:
+        return None
+    try:
+        began = datetime.fromisoformat(started)
+    except ValueError:
+        return None
+    if datetime.utcnow() - began > PENDING_MFA_TIMEOUT:
+        request.session.clear()
+        return None
+    user = db.get(User, uid)
+    return user if user and user.is_active else None
+
+
 def sign_out(request: Request) -> None:
     request.session.clear()
 

@@ -13,3 +13,7 @@ openpyxl>=3.1
 # the database - a nightly backup on a laptop, say - is not a copy of the
 # practice's credentials.
 cryptography>=43.0
+# RFC 6238 time-based one-time codes for staff MFA (app/mfa.py). A small,
+# widely used, pure-Python implementation of the standard, so this app's own
+# code is the enrollment and storage around it, not the cryptography itself.
+pyotp>=2.9

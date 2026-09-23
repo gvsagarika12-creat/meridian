@@ -43,6 +43,7 @@ from . import cache
 from . import integrations
 from . import intakeq
 from . import broadcasts
+from . import mfa
 from . import documents
 from . import ehr
 from . import simulation
@@ -143,6 +144,7 @@ templates.env.globals["sections_for"] = lambda name: ehr.TEMPLATES.get(
 templates.env.globals["today"] = date.today
 templates.env.globals["COMMON_CPT"] = ehr.COMMON_CPT
 templates.env.globals["CriterionKind"] = trials.CriterionKind
+templates.env.globals["backup_codes_left"] = mfa.remaining_backup_codes
 # The labels IntakeQ shows for each type, kept out of the enum so the
 # stored value stays a stable identifier.
 templates.env.globals["prefill_for"] = prefill_for
@@ -355,9 +357,90 @@ def do_login(request: Request, email: str = F(""), password: str = F(""),
         return fail("Email or password is incorrect.")
 
     auth.clear_failures(email)
+
+    if user.mfa_enabled:
+        # The password is proven but the session is not signed in - see
+        # begin_mfa_challenge's docstring for why that distinction is the
+        # entire point. "next" travels in the query string of the redirect
+        # rather than the session, so a bookmarked deep link still lands where
+        # it was headed once the second factor clears.
+        auth.begin_mfa_challenge(request, user)
+        log(db, "Password verified, awaiting MFA code", "user", user.id,
+            user_id=user.id, ip=client_ip(request))
+        db.commit()
+        target = next if next.startswith("/") and not next.startswith("//") else "/"
+        return RedirectResponse(f"/login/verify?{urlencode({'next': target})}",
+                                status_code=303)
+
     auth.sign_in(request, user)
     user.last_login = datetime.utcnow()
     log(db, "Staff Logged In", "user", user.id, user_id=user.id, ip=client_ip(request))
+    db.commit()
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    return RedirectResponse(target, status_code=303)
+
+
+@app.get("/login/verify", response_class=HTMLResponse)
+def login_verify(request: Request, next: str = "/", db: Session = Depends(get_db)):
+    user = auth.pending_mfa_user(request, db)
+    if not user:
+        # No pending challenge, or it expired. Back to the start rather than a
+        # bare error - the password already worked once, typing it again is a
+        # small cost next to a dead end explaining a five-minute window nobody
+        # was watching the clock for.
+        return RedirectResponse("/login", status_code=303)
+    return render("login_verify.html", {
+        "request": request, "practice": config.load(), "next": next,
+        "error": "", "email": user.email})
+
+
+@app.post("/login/verify")
+def login_verify_submit(request: Request, code: str = F(""),
+                        backup_code: str = F(""), next: str = F("/"),
+                        db: Session = Depends(get_db)):
+    user = auth.pending_mfa_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    def fail(message: str):
+        return render("login_verify.html", {
+            "request": request, "practice": config.load(), "next": next,
+            "error": message, "email": user.email})
+
+    # The same lockout the password step uses, keyed the same way. A code is
+    # six digits - roughly a million possibilities - and without a limit here
+    # an attacker who has already learned or guessed a password could sit at
+    # this screen and brute-force the rest.
+    remaining = auth.is_locked(user.email)
+    if remaining:
+        mins = max(1, int(remaining.total_seconds() // 60))
+        log(db, "MFA Verify Blocked (locked out)", "user", user.id,
+            user_id=user.id, ip=client_ip(request))
+        db.commit()
+        return fail(f"Too many failed attempts. Try again in {mins} minute(s).")
+
+    ok = False
+    if backup_code.strip():
+        ok = mfa.verify_backup_code(db, user, backup_code)
+        if ok:
+            left = mfa.remaining_backup_codes(db, user)
+            log(db, f"Signed in with a backup code ({left} left)", "user",
+                user.id, user_id=user.id, ip=client_ip(request))
+    elif code.strip():
+        ok = mfa.verify_code(user, code)
+
+    if not ok:
+        auth.record_failure(user.email)
+        log(db, "MFA Verify Failed", "user", user.id, user_id=user.id,
+            ip=client_ip(request))
+        db.commit()
+        return fail("That code is incorrect or has expired.")
+
+    auth.clear_failures(user.email)
+    auth.sign_in(request, user)
+    user.last_login = datetime.utcnow()
+    log(db, "Staff Logged In (MFA)", "user", user.id, user_id=user.id,
+        ip=client_ip(request))
     db.commit()
     target = next if next.startswith("/") and not next.startswith("//") else "/"
     return RedirectResponse(target, status_code=303)
@@ -388,6 +471,7 @@ def users_screen(request: Request, db: Session = Depends(get_db),
                    .order_by(User.id).all(),
         roles=list(UserRole),
         error=request.session.pop("user_error", ""),
+        note=request.session.pop("user_note", ""),
     ))
 
 
@@ -522,6 +606,30 @@ def user_reset(user_id: int, request: Request, db: Session = Depends(get_db),
     return RedirectResponse("/users", status_code=303)
 
 
+@app.post("/users/{user_id}/mfa-reset")
+def user_mfa_reset(user_id: int, request: Request, db: Session = Depends(get_db),
+                   actor: User = Depends(needs(perms.USERS_MANAGE))):
+    """Turn a staff member's MFA off from the admin side, for a lost device.
+
+    This is a real reduction in that account's security - anyone who then
+    signs in with just the password is in, with no second factor until they
+    re-enroll - so it is logged as an administrative act with the admin's own
+    id, the same way an admin-issued password reset is, rather than folded
+    into the ordinary self-service disable flow that logs against the account
+    holder.
+    """
+    target = get_or_404(db, User, user_id)
+    if not target.mfa_enabled:
+        return RedirectResponse("/users", status_code=303)
+    mfa.disable(db, target, by_admin=True)
+    log(db, f"MFA reset by {actor.name}", "user", target.id, user_id=actor.id)
+    db.commit()
+    request.session["user_note"] = (
+        f"Two-factor authentication turned off for {target.name}. "
+        f"They can set it up again from their Account page.")
+    return RedirectResponse("/users", status_code=303)
+
+
 @app.get("/permissions", response_class=HTMLResponse)
 def permissions_screen(request: Request, db: Session = Depends(get_db)):
     """Visible to every signed-in user. Knowing the policy is not a privilege -
@@ -566,6 +674,86 @@ def change_password(request: Request, current: str = F(""), new: str = F(""),
         message = "Password changed."
     return render("account.html", ctx(request, db, nav="account", message=message,
                                       error=error, mustchange=user.must_change_password))
+
+
+@app.get("/account/mfa/setup", response_class=HTMLResponse)
+def mfa_setup(request: Request, db: Session = Depends(get_db)):
+    """Start enrollment: generate a secret, show it once, wait for a code back.
+
+    Re-running this while already enrolled starts over with a fresh secret -
+    the old one stops working the moment a new one is stored, which is the
+    correct behaviour for "I want to switch to a different phone" and for
+    "the QR code did not scan the first time" alike.
+    """
+    user = auth.current_user(request, db)
+    secret = mfa.begin_enrollment(db, user)
+    db.commit()
+    uri = mfa.provisioning_uri(secret, email=user.email,
+                               issuer=config.load().get("name", "Meridian"))
+    return render("mfa_setup.html", ctx(
+        request, db, nav="account", secret=secret, uri=uri, error=""))
+
+
+@app.post("/account/mfa/confirm")
+def mfa_confirm(request: Request, code: str = F(""),
+                db: Session = Depends(get_db)):
+    user = auth.current_user(request, db)
+    codes = mfa.confirm_enrollment(db, user, code)
+    if codes is None:
+        # confirm_enrollment writes nothing when the code fails to verify -
+        # the stored secret from setup is untouched, so the retry below shows
+        # the same manual-entry key rather than a fresh one.
+        secret = mfa.pending_secret(user)
+        uri = (mfa.provisioning_uri(secret, email=user.email,
+                                    issuer=config.load().get("name", "Meridian"))
+              if secret else "")
+        return render("mfa_setup.html", ctx(
+            request, db, nav="account", secret=secret, uri=uri,
+            error="That code did not verify. Check the time on your phone "
+                 "matches your computer's, and try the newest code shown."))
+    log(db, "MFA turned on", "user", user.id, user_id=user.id, ip=client_ip(request))
+    db.commit()
+    return render("mfa_backup_codes.html", ctx(
+        request, db, nav="account", codes=codes, first_time=True))
+
+
+@app.post("/account/mfa/disable")
+def mfa_disable(request: Request, current: str = F(""),
+                db: Session = Depends(get_db)):
+    """Turn MFA off. Requires the current password, same bar as changing one.
+
+    A stolen, already-signed-in laptop is exactly the situation this password
+    re-check defends: the session cookie alone is not enough to remove the
+    second factor protecting it.
+    """
+    user = auth.current_user(request, db)
+    if not auth.verify_password(current, user.password_hash):
+        return render("account.html", ctx(
+            request, db, nav="account", message="",
+            error="Your current password is incorrect.",
+            mustchange=user.must_change_password))
+    mfa.disable(db, user)
+    db.commit()
+    return render("account.html", ctx(
+        request, db, nav="account", message="Two-factor authentication is now off.",
+        error="", mustchange=user.must_change_password))
+
+
+@app.post("/account/mfa/backup-codes")
+def mfa_new_backup_codes(request: Request, current: str = F(""),
+                        db: Session = Depends(get_db)):
+    user = auth.current_user(request, db)
+    if not auth.verify_password(current, user.password_hash):
+        return render("account.html", ctx(
+            request, db, nav="account", message="",
+            error="Your current password is incorrect.",
+            mustchange=user.must_change_password))
+    codes = mfa.regenerate_backup_codes(db, user)
+    log(db, "MFA backup codes regenerated", "user", user.id, user_id=user.id,
+        ip=client_ip(request))
+    db.commit()
+    return render("mfa_backup_codes.html", ctx(
+        request, db, nav="account", codes=codes, first_time=False))
 
 
 @app.get("/forms", response_class=HTMLResponse)

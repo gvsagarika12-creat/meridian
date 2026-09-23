@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Your backup codes{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span><a href="/account">My Account</a>
+<span class="sep">&rsaquo;</span>Backup codes</div>{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:560px">
+  <h2>&#9989; {{ 'Two-factor authentication is on' if first_time else 'New backup codes' }}</h2>
+  <div class="body">
+    <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+                padding:13px 16px;margin-bottom:18px;font-size:14.5px">
+      <b>This is the only time these are shown.</b> {{ 'The old set is gone -' if not first_time }}
+      Write them down or save them in a password manager, not on this computer alone.
+      {% if not first_time %}Any of your old codes still unused will no longer work.{% endif %}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;
+                font-family:monospace;font-size:16px;background:#f7f9f9;
+                padding:16px;border-radius:8px;margin-bottom:18px">
+      {% for code in codes %}<div>{{ code }}</div>{% endfor %}
+    </div>
+
+    <p class="hint" style="margin-bottom:18px">
+      Each code works once. Use one at the sign-in screen if you ever lose
+      access to your authenticator app.</p>
+
+    <a href="/account" class="btn btn-green">Done</a>
+  </div>
+</div>
+{% endblock %}

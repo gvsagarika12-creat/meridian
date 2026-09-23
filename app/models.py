@@ -133,6 +133,14 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Two-factor authentication - see app/mfa.py. The secret is a Fernet token,
+    # not the raw base32 value: a user row is the thing that ends up in every
+    # database backup, and a backup is exactly where a live second factor must
+    # not be readable in the clear.
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     @property
     def initials(self) -> str:
         parts = [p for p in self.name.split() if p]
@@ -597,6 +605,7 @@ from . import intakeq  # noqa: E402,F401
 from . import ehr  # noqa: E402,F401
 from . import documents  # noqa: E402,F401
 from . import broadcasts  # noqa: E402,F401
+from . import mfa  # noqa: E402,F401
 from . import hospital  # noqa: E402,F401
 from . import trials  # noqa: E402,F401
 from . import schedule  # noqa: E402,F401
