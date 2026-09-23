@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Take a payment{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/billing">Billing</a>
+  <span class="sep">&rsaquo;</span>Take a payment</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:640px">
+{% include "_tbl.html" %}
+{% include "_billing_nav.html" %}
+
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+            color:var(--bad);padding:14px 17px;margin:0 0 20px;font-size:14.5px">
+  <b>DEMONSTRATION ONLY &mdash; no real transaction is processed.</b>
+  <p style="margin:7px 0 0">
+    This form never contacts a payment processor. Whether it succeeds is decided
+    by a checksum on the number you type. <b>No card number or CVC is stored</b>,
+    not even hashed &mdash; only the last four digits reach the payment record.
+  </p>
+</div>
+
+{% if result %}
+<div style="background:{{ 'var(--good-soft)' if result.ok else 'var(--bad-soft)' }};
+            border-left:3px solid {{ 'var(--good)' if result.ok else 'var(--bad)' }};
+            color:{{ 'var(--good)' if result.ok else 'var(--bad)' }};
+            padding:13px 16px;margin:0 0 18px;font-size:14.5px">
+  <b>{{ 'Approved' if result.ok else 'Declined' }} &mdash;
+    {{ result.amount }} for {{ result.patient }}
+    {%- if result.last4 %} (card ending {{ result.last4 }}){% endif %}</b>
+  <p style="margin:6px 0 0">{{ result.detail }}</p>
+</div>
+{% endif %}
+{% if error %}<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+  color:var(--bad);padding:12px 15px;margin:0 0 16px;font-size:14.5px">{{ error }}</div>{% endif %}
+
+<div class="panel"><div class="body">
+  <form method="post" action="/billing/pay" style="display:grid;gap:13px">
+    <label>Patient
+      <select name="client_id" required style="width:100%">
+        <option value="">— choose —</option>
+        {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select></label>
+    <label>Payment amount
+      <input type="text" name="amount" inputmode="decimal" required
+             placeholder="0.00" style="width:100%"></label>
+    <label>Card number
+      <input type="text" name="card" required autocomplete="off"
+             placeholder="4242 4242 4242 4242" style="width:100%"></label>
+    <div style="display:flex;gap:11px">
+      <label style="flex:1">Expiry month
+        <input type="text" name="exp_month" placeholder="MM" style="width:100%"></label>
+      <label style="flex:1">Expiry year
+        <input type="text" name="exp_year" placeholder="YYYY" style="width:100%"></label>
+      <label style="flex:1">CVC
+        <input type="text" name="cvc" autocomplete="off" style="width:100%"></label>
+    </div>
+    <button class="btn btn-green">Process demo transaction</button>
+  </form>
+  <p class="hint" style="margin:13px 0 0">
+    <b>4242 4242 4242 4242</b> passes the checksum and approves.
+    <b>4242 4242 4242 4241</b> fails it and declines &mdash; so both outcomes
+    can be shown on demand.</p>
+</div></div>
+</div>
+{% endblock %}

@@ -295,12 +295,43 @@ class Order(Base):
 
 
 class ChargeStatus(str, enum.Enum):
+    """A charge's journey from coded to closed.
+
+    `pending_approval` and `approved` are a real workflow, not decoration: the
+    person who codes a visit and the person who signs it off are usually
+    different, and in a practice where they are the same person the step still
+    exists so that "somebody checked this" is recorded rather than assumed.
+    """
+
     draft = "draft"
-    ready = "ready"             # coded and checked, waiting to go to the biller
+    pending_approval = "pending_approval"
+    approved = "approved"
+    ready = "ready"             # kept: charges coded before approval existed
     submitted = "submitted"     # handed to the billing service or clearinghouse
     paid = "paid"
     denied = "denied"
     written_off = "written_off"
+
+
+#  What may follow what. A status machine written down beats one implied by
+#  which buttons a template happens to draw - the buttons can then be generated
+#  from it, and a route can refuse a transition the UI never offered.
+CHARGE_NEXT: dict[ChargeStatus, list[tuple[ChargeStatus, str]]] = {
+    ChargeStatus.draft: [(ChargeStatus.pending_approval, "Send for approval")],
+    ChargeStatus.pending_approval: [(ChargeStatus.approved, "Approve"),
+                                    (ChargeStatus.draft, "Send back to draft")],
+    ChargeStatus.approved: [(ChargeStatus.submitted, "Submit"),
+                            (ChargeStatus.pending_approval, "Send back for approval")],
+    ChargeStatus.ready: [(ChargeStatus.submitted, "Submit"),
+                         (ChargeStatus.draft, "Send back to draft")],
+    ChargeStatus.submitted: [(ChargeStatus.paid, "Mark paid"),
+                             (ChargeStatus.denied, "Mark denied"),
+                             (ChargeStatus.written_off, "Write off")],
+    ChargeStatus.denied: [(ChargeStatus.pending_approval, "Rework"),
+                          (ChargeStatus.written_off, "Write off")],
+    ChargeStatus.paid: [],
+    ChargeStatus.written_off: [],
+}
 
 
 class Charge(Base):
@@ -399,6 +430,8 @@ class ClaimStatus(str, enum.Enum):
     accepted = "accepted"       # the payer acknowledged receipt
     rejected = "rejected"       # bounced before adjudication - a format problem
     denied = "denied"           # adjudicated and refused - a coverage decision
+    waiting_adjudication = "waiting_adjudication"
+    needs_investigation = "needs_investigation"
     paid = "paid"
     appealed = "appealed"
     closed = "closed"
@@ -412,6 +445,11 @@ class ClaimStatus(str, enum.Enum):
 #  does neither well.
 FIXABLE = (ClaimStatus.rejected,)
 APPEALABLE = (ClaimStatus.denied,)
+#  Neither refused nor settled. These are the ones that go quiet and are
+#  forgotten, which is why they get their own tab rather than sitting inside
+#  "everything else".
+IN_FLIGHT = (ClaimStatus.submitted, ClaimStatus.accepted,
+             ClaimStatus.waiting_adjudication, ClaimStatus.needs_investigation)
 
 
 class Claim(Base):
@@ -473,7 +511,7 @@ class Claim(Base):
         The list a biller works from. A denial nobody has looked at is money
         the practice has decided, by inaction, not to collect.
         """
-        return self.status in FIXABLE + APPEALABLE
+        return self.status in FIXABLE + APPEALABLE + (ClaimStatus.needs_investigation,)
 
     @property
     def outcome(self) -> str:
@@ -481,6 +519,10 @@ class Claim(Base):
             return "Rejected before adjudication - correct and resend"
         if self.status == ClaimStatus.denied:
             return "Denied by the payer - appeal or write off"
+        if self.status == ClaimStatus.waiting_adjudication:
+            return "With the payer, no decision yet"
+        if self.status == ClaimStatus.needs_investigation:
+            return "Something is wrong with this claim - somebody must look"
         return self.status.value.replace("_", " ")
 
 
@@ -534,3 +576,73 @@ class Payment(Base):
 
 METHODS = ["Card", "Cash", "Cheque", "EFT / ERA", "Insurance payment",
            "Contractual adjustment", "Write-off"]
+
+
+# --- statements -----------------------------------------------------------
+
+
+class StatementKind(str, enum.Enum):
+    initial = "initial"
+    reminder = "reminder"
+    final_notice = "final_notice"
+
+
+class Delivery(str, enum.Enum):
+    prepared = "prepared"       # produced, not yet sent
+    sent = "sent"
+    delivered = "delivered"
+    failed = "failed"
+    returned = "returned"       # post came back
+
+
+class Statement(Base):
+    """A bill sent to the patient for what insurance did not cover.
+
+    The amount is stored rather than computed at display time. A statement is a
+    claim about what was owed on the day it was produced, and re-deriving it
+    later would quietly rewrite history the moment a payment landed - the
+    patient holds a piece of paper saying one figure and the screen would show
+    another, with no way to tell which they were sent.
+
+    Escalation is a sequence the practice controls, not a status the app
+    decides. initial -> reminder -> final notice is the order, and nothing here
+    advances it automatically: a final notice sent because a cron job counted
+    thirty days is how a practice sends a final notice to somebody whose cheque
+    is in the post.
+    """
+
+    __tablename__ = "patient_statements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+
+    kind: Mapped[StatementKind] = mapped_column(
+        Enum(StatementKind), default=StatementKind.initial)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    #  What the balance was when this went out, kept alongside the amount so a
+    #  part-payment afterwards does not make the statement look wrong.
+    balance_at_send: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+
+    method: Mapped[str] = mapped_column(String(32), default="Post")
+    status: Mapped[Delivery] = mapped_column(Enum(Delivery), default=Delivery.prepared)
+    sent_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    detail: Mapped[str] = mapped_column(String(255), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[str] = mapped_column(String(160), default="")
+
+    client: Mapped["Client"] = relationship()                      # noqa: F821
+
+    @property
+    def is_out(self) -> bool:
+        return self.status in (Delivery.sent, Delivery.delivered)
+
+    @property
+    def label(self) -> str:
+        return {StatementKind.initial: "Statement",
+                StatementKind.reminder: "Reminder",
+                StatementKind.final_notice: "Final notice"}[self.kind]
+
+
+STATEMENT_METHODS = ["Post", "Email", "SMS", "Handed over", "Patient portal"]

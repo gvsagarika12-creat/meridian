@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Insurance collections{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/billing">Billing</a>
+  <span class="sep">&rsaquo;</span>Insurance collections</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1040px">
+{% include "_tbl.html" %}
+{% include "_billing_nav.html" %}
+
+<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
+  {% for key, label in [('all','All'), ('rejected','Rejected'), ('denied','Denied'),
+                        ('waiting','Waiting for adjudication'),
+                        ('investigate','Needs investigation'), ('paid','Paid')] %}
+  <a class="btn btn-sm {{ 'btn-green' if show == key }}"
+     href="/billing/insurance?show={{ key }}">{{ label }}
+     {%- if counts.get(key) %} ({{ counts[key] }}){% endif %}</a>
+  {% endfor %}
+</div>
+
+<form method="get" action="/billing/insurance" style="display:flex;gap:8px;margin-bottom:16px">
+  <input type="hidden" name="show" value="{{ show }}">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search patient or payer"
+         style="flex:1;max-width:320px">
+  <button class="btn btn-sm">Search</button>
+</form>
+
+<div class="panel"><div class="body" style="padding:0">
+  <table class="t">
+    <thead><tr><th>Date of service</th><th>Patient</th><th>Payer</th>
+      <th>Status</th><th class="num">Billed</th><th class="num">Paid</th></tr></thead>
+    <tbody>
+    {% for cl in claims %}
+    <tr>
+      <td>{{ cl.charge.service_on.strftime('%d %b %Y') if cl.charge else '—' }}</td>
+      <td><a href="/clients/{{ cl.client_id }}#billing"><b>{{ cl.client.name }}</b></a></td>
+      <td>{{ cl.payer or '—' }}
+        {% if cl.claim_number %}<div class="hint">{{ cl.claim_number }}</div>{% endif %}</td>
+      <td>
+        <span class="pill {{ 'ok' if cl.status.value == 'paid'
+          else 'bad' if cl.status.value in ('denied','rejected')
+          else 'wait' if cl.status.value == 'needs_investigation' else 'grey' }}"
+          >{{ cl.status.value.replace('_', ' ') }}</span>
+        <div class="hint" style="margin-top:3px">{{ cl.outcome }}
+          {%- if cl.denial_code %} &middot; {{ cl.denial_code }}{% endif %}</div>
+        {% if cl.denial_reason %}<div class="hint">{{ cl.denial_reason }}</div>{% endif %}
+      </td>
+      <td class="num">{{ '%.2f'|format(cl.billed|float) }}</td>
+      <td class="num">{{ '%.2f'|format(cl.paid|float) if cl.paid else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="padding:20px 16px"><span class="hint">
+      No claims in this group.</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<p class="hint" style="margin-top:14px;max-width:760px">
+  <b>Rejected</b> never reached adjudication &mdash; correct it and resend.
+  <b>Denied</b> is the payer refusing to pay &mdash; appeal it or write it off.
+  They are separate tabs because they need opposite responses.
+</p>
+</div>
+{% endblock %}

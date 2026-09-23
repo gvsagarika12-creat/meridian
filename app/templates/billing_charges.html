@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Charges{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/billing">Billing</a>
+  <span class="sep">&rsaquo;</span>Charges</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap" style="max-width:1040px">
+{% include "_tbl.html" %}
+{% include "_billing_nav.html" %}
+
+{% if note %}<div style="background:var(--good-soft);border-left:3px solid var(--good);
+  color:var(--good);padding:12px 15px;margin:0 0 16px;font-size:14.5px">{{ note }}</div>{% endif %}
+{% if error %}<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+  color:var(--bad);padding:12px 15px;margin:0 0 16px;font-size:14.5px">{{ error }}</div>{% endif %}
+
+<form method="get" action="/billing/charges"
+      style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search patient, CPT or description"
+         style="flex:1;min-width:210px">
+  <select name="status" style="width:180px">
+    <option value="">any status</option>
+    {% for s in statuses %}
+    <option value="{{ s.value }}" {{ 'selected' if s.value == status }}>
+      {{ s.value.replace('_', ' ') }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-sm">Search</button>
+  {% if q or status %}<a class="btn btn-sm" href="/billing/charges">Clear</a>{% endif %}
+</form>
+
+<div class="panel"><div class="body" style="padding:0">
+  <table class="t">
+    <thead><tr>
+      <th>Date</th><th>Patient</th><th>Service</th><th>Status</th>
+      <th class="num">Amount</th><th class="num">Owed</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for c in charges %}
+    <tr>
+      <td>{{ c.service_on.strftime('%d %b %Y') }}</td>
+      <td>{% if c.client %}<a href="/clients/{{ c.client_id }}#billing">
+        <b>{{ c.client.name }}</b></a>{% else %}&mdash;{% endif %}</td>
+      <td><b>{{ c.cpt }}</b>
+        <div class="hint">{{ c.description }}{% if c.icd10 %} &middot; {{ c.icd10 }}{% endif %}</div></td>
+      <td>
+        <span class="pill {{ 'ok' if c.status.value == 'paid'
+          else 'bad' if c.status.value in ('denied','written_off')
+          else 'wait' if c.status.value == 'pending_approval' else 'grey' }}"
+          >{{ c.status.value.replace('_', ' ') }}</span>
+      </td>
+      <td class="num">{{ '%.2f'|format(c.amount|float) }}</td>
+      <td class="num">{% if c.outstanding > 0.005 %}
+        <span style="color:var(--bad);font-weight:600">{{ '%.2f'|format(c.outstanding) }}</span>
+        {% else %}&mdash;{% endif %}</td>
+      <td class="act">
+        {% for to, label in next_steps.get(c.status, []) %}
+        <form method="post" action="/charges/{{ c.id }}/advance">
+          <input type="hidden" name="to" value="{{ to.value }}">
+          <button class="btn btn-sm {{ 'btn-green' if loop.first }}">{{ label }}</button>
+        </form>
+        {% else %}<span class="hint">&mdash;</span>{% endfor %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="padding:20px 16px"><span class="hint">
+      No charges{{ ' match that search' if q or status }}.</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<p class="hint" style="margin-top:14px;max-width:760px">
+  The buttons on each row are the only transitions that status allows, and the
+  server checks again before acting &mdash; a status field that accepts whatever
+  is posted is how an unapproved charge reaches a payer.
+  <b>Nothing here is filed with anybody:</b> "submitted" means handed to whoever
+  files claims.
+</p>
+
+</div>
+{% endblock %}

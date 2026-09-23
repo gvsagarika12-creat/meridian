@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Patient collections{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/billing">Billing</a>
+  <span class="sep">&rsaquo;</span>Patient collections</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1040px">
+{% include "_tbl.html" %}
+{% include "_billing_nav.html" %}
+
+{% if note %}<div style="background:var(--good-soft);border-left:3px solid var(--good);
+  color:var(--good);padding:12px 15px;margin:0 0 16px;font-size:14.5px">{{ note }}</div>{% endif %}
+{% if error %}<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+  color:var(--bad);padding:12px 15px;margin:0 0 16px;font-size:14.5px">{{ error }}</div>{% endif %}
+
+<div class="panel" style="margin-bottom:22px">
+  <h2>Who owes money <span class="hint" style="font-weight:400">
+    &mdash; {{ '%.2f'|format(total) }} across {{ balances|length }} patient{{ 's' if balances|length != 1 }}</span></h2>
+  <div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Patient</th><th class="num">Owed</th><th class="num">Charges</th>
+        <th class="num">Oldest</th><th></th></tr></thead>
+      <tbody>
+      {% for b in balances %}
+      <tr>
+        <td><a href="/clients/{{ b.client.id }}#billing"><b>{{ b.client.name }}</b></a></td>
+        <td class="num" style="color:var(--bad);font-weight:600">{{ '%.2f'|format(b.owed) }}</td>
+        <td class="num">{{ b.charges }}</td>
+        <td class="num">
+          <span class="pill {{ 'bad' if b.days > 90 else 'wait' if b.days > 60 else 'grey' }}"
+            >{{ b.days }} days</span></td>
+        <td class="act">
+          {% if can(user, P.BILLING_EDIT) %}
+          <details style="display:inline-block;text-align:left">
+            <summary class="btn btn-sm btn-green" style="list-style:none">Statement</summary>
+            <form method="post" action="/clients/{{ b.client.id }}/statements"
+                  style="display:grid;gap:7px;margin-top:9px;min-width:250px">
+              <select name="kind">
+                <option value="initial">Statement</option>
+                <option value="reminder">Reminder</option>
+                <option value="final_notice">Final notice</option>
+              </select>
+              <input type="text" name="amount" value="{{ '%.2f'|format(b.owed) }}">
+              <select name="method">
+                {% for m in methods %}<option>{{ m }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-sm btn-green">Prepare it</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="padding:20px 16px"><span class="hint">
+        Nobody owes anything.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Statements</h2>
+  <div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Patient</th><th>Type</th><th class="num">Amount</th>
+        <th>Method</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for s in statements %}
+      <tr>
+        <td><a href="/clients/{{ s.client_id }}#billing">{{ s.client.name }}</a></td>
+        <td><b>{{ s.label }}</b>
+          {% if s.sent_on %}<div class="hint">sent {{ s.sent_on.strftime('%d %b %Y') }}</div>{% endif %}</td>
+        <td class="num">{{ '%.2f'|format(s.amount|float) }}</td>
+        <td>{{ s.method }}</td>
+        <td><span class="pill {{ 'ok' if s.status.value == 'delivered'
+          else 'bad' if s.status.value in ('failed','returned')
+          else 'grey' }}">{{ s.status.value }}</span></td>
+        <td class="act">
+          {% if can(user, P.BILLING_EDIT) and s.status.value != 'delivered' %}
+          <form method="post" action="/statements/{{ s.id }}/status">
+            <select name="status" style="width:120px">
+              {% for v in ['sent','delivered','failed','returned'] %}
+              <option value="{{ v }}">{{ v }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-sm">Record</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:20px 16px"><span class="hint">
+        No statements yet.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="hint" style="margin-top:14px;max-width:760px">
+  Ordered by age, not amount: a small balance outstanding four months is a
+  collections problem, a large one from last week is a claim that has not come
+  back yet. <b>Nothing is posted or emailed by this app</b> &mdash; a person
+  marks a statement sent once it actually goes out.
+</p>
+</div>
+{% endblock %}

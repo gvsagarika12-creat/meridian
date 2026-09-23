@@ -1,0 +1,12 @@
+{#  One place for the billing sub-nav. Six screens that all look like each
+    other is six chances for one of them to quietly lose a link.  #}
+<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px">
+  {% for href, label in [
+      ('/billing', 'A/R dashboard'), ('/billing/charges', 'Charges'),
+      ('/billing/insurance', 'Insurance collections'),
+      ('/billing/patients', 'Patient collections'),
+      ('/billing/analytics', 'Analytics'), ('/billing/pay', 'Take a payment')] %}
+  <a class="btn btn-sm {{ 'btn-green' if request.url.path == href }}"
+     href="{{ href }}">{{ label }}</a>
+  {% endfor %}
+</div>

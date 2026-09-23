@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Billing analytics{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/billing">Billing</a>
+  <span class="sep">&rsaquo;</span>Analytics</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1000px">
+{% include "_tbl.html" %}
+{% include "_billing_nav.html" %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+            gap:14px;margin-bottom:24px">
+  <div class="tile"><div class="lab">Patient visits</div>
+    <div class="big">{{ visits }}</div></div>
+  <div class="tile"><div class="lab">Gross charges</div>
+    <div class="big">{{ '%.2f'|format(gross) }}</div></div>
+  <div class="tile"><div class="lab">Net collections</div>
+    <div class="big" style="color:var(--good)">{{ '%.2f'|format(net) }}</div></div>
+  <div class="tile"><div class="lab">Collection rate</div>
+    <div class="big" style="color:{{ 'var(--good)' if collection_rate >= 90
+      else 'var(--bad)' if collection_rate < 70 else 'inherit' }}"
+      >{{ '%.0f'|format(collection_rate) }}%</div></div>
+</div>
+
+<div class="panel">
+  <h2>Gross charges vs net collections</h2>
+  <div class="body">
+    <p class="hint" style="margin-top:0;max-width:720px">
+      Two figures rather than one. Gross charges on their own flatter a
+      practice &mdash; billing 300 and collecting 120 is a different business
+      from billing 300 and collecting 290, and a single "revenue" line cannot
+      tell them apart.</p>
+
+    {% if series %}
+    {#  Bars drawn in CSS rather than a charting library. This is two numbers a
+        month; pulling in a JavaScript dependency to draw twelve rectangles is
+        a dependency to keep patched forever for no gain.  #}
+    <div style="display:flex;gap:16px;align-items:flex-end;height:210px;
+                padding:14px 0;overflow-x:auto">
+      {% for row in series %}
+      <div style="display:flex;flex-direction:column;align-items:center;
+                  gap:6px;min-width:66px">
+        <div style="display:flex;gap:4px;align-items:flex-end;height:160px">
+          <div title="Gross {{ '%.2f'|format(row.gross) }}"
+               style="width:20px;background:#5b7fa6;border-radius:3px 3px 0 0;
+                      height:{{ (row.gross / peak * 155) | round | int }}px"></div>
+          <div title="Net {{ '%.2f'|format(row.net) }}"
+               style="width:20px;background:#d08a4f;border-radius:3px 3px 0 0;
+                      height:{{ (row.net / peak * 155) | round | int }}px"></div>
+        </div>
+        <div class="hint" style="font-size:11.5px">{{ row.month }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:18px;font-size:13px;margin-top:8px">
+      <span><span style="display:inline-block;width:11px;height:11px;
+        background:#5b7fa6;border-radius:2px;margin-right:5px"></span>Gross charges</span>
+      <span><span style="display:inline-block;width:11px;height:11px;
+        background:#d08a4f;border-radius:2px;margin-right:5px"></span>Net collections</span>
+    </div>
+    {% else %}
+    <p class="hint">No charges yet, so there is nothing to chart.</p>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

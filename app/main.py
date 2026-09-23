@@ -3283,3 +3283,347 @@ def billing_dashboard(request: Request, db: Session = Depends(get_db),
         billed=sum(float(c.amount or 0) for c in charges),
         received=sum(c.received for c in charges),
         owed=sum(c.outstanding for c in outstanding)))
+
+
+# --- patient collections and statements -----------------------------------
+
+
+def _patient_balances(db):
+    """Every patient with money outstanding, and how old the oldest charge is.
+
+    Built from charges and their payments rather than a stored balance. A
+    balance column would be one more thing to keep in step, and the day it
+    drifts is the day somebody is chased for money they have already paid.
+    """
+    charges = (db.query(ehr.Charge)
+               .options(selectinload(ehr.Charge.payments),
+                        joinedload(ehr.Charge.client))
+               .all())
+    today = date.today()
+    rows: dict[int, dict] = {}
+    for charge in charges:
+        owed = charge.outstanding
+        if owed <= 0.005 or charge.client is None:
+            continue
+        row = rows.setdefault(charge.client_id, {
+            "client": charge.client, "owed": 0.0, "charges": 0,
+            "oldest": charge.service_on})
+        row["owed"] += owed
+        row["charges"] += 1
+        row["oldest"] = min(row["oldest"], charge.service_on)
+    for row in rows.values():
+        row["days"] = (today - row["oldest"]).days
+    return sorted(rows.values(), key=lambda r: -r["days"])
+
+
+@app.get("/billing/patients", response_class=HTMLResponse)
+def patient_collections(request: Request, db: Session = Depends(get_db),
+                        _=Depends(needs(perms.BILLING_EDIT))):
+    """Who owes money, oldest first.
+
+    Ordered by age rather than amount on purpose: a small balance outstanding
+    for four months is a collections problem, and a large one from last week is
+    simply a claim that has not come back yet.
+    """
+    balances = _patient_balances(db)
+    recent = (db.query(ehr.Statement)
+              .options(joinedload(ehr.Statement.client))
+              .order_by(ehr.Statement.id.desc()).limit(50).all())
+    return render("collections.html", ctx(
+        request, db, nav="billing", balances=balances, statements=recent,
+        methods=ehr.STATEMENT_METHODS,
+        total=sum(r["owed"] for r in balances),
+        note=request.session.pop("billing_note", ""),
+        error=request.session.pop("billing_error", "")))
+
+
+@app.post("/clients/{client_id}/statements")
+def statement_new(client_id: int, request: Request, kind: str = F("initial"),
+                  amount: str = F(""), method: str = F("Post"),
+                  due_on: str = F(""), detail: str = F(""),
+                  db: Session = Depends(get_db),
+                  _=Depends(needs(perms.BILLING_EDIT))):
+    """Produce a statement for what this patient owes.
+
+    The amount defaults to the current balance but is editable, because a
+    practice legitimately bills part of it - a payment plan, or holding back a
+    line that is still with the insurer. Forcing the full balance would mean
+    the statement and the arrangement disagree.
+    """
+    client = get_or_404(db, Client, client_id)
+    me = auth.current_user(request, db)
+
+    owed = sum(r["owed"] for r in _patient_balances(db)
+               if r["client"].id == client.id)
+    value = _money(amount) if (amount or "").strip() else Decimal(str(round(owed, 2)))
+    if value <= 0:
+        request.session["billing_error"] = (
+            f"{client.first_name} owes nothing, so there is nothing to bill. "
+            f"A statement for zero is a letter that confuses the patient and "
+            f"generates a phone call.")
+        return RedirectResponse("/billing/patients", status_code=303)
+
+    try:
+        which = ehr.StatementKind(kind)
+    except ValueError:
+        which = ehr.StatementKind.initial
+
+    statement = ehr.Statement(
+        client_id=client.id, kind=which, amount=value,
+        balance_at_send=Decimal(str(round(owed, 2))),
+        method=method.strip()[:32] or "Post",
+        due_on=_date_or_none(due_on), detail=detail.strip()[:255],
+        created_by=(me.name if me else "")[:160])
+    db.add(statement)
+    db.flush()
+    log(db, f"{statement.label} prepared: {value}", "client", client.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["billing_note"] = (
+        f"{statement.label} for {value} prepared. Nothing has been sent - "
+        f"mark it sent once it actually goes out.")
+    return RedirectResponse("/billing/patients", status_code=303)
+
+
+@app.post("/statements/{statement_id}/status")
+def statement_status(statement_id: int, request: Request, status: str = F(""),
+                     db: Session = Depends(get_db),
+                     _=Depends(needs(perms.BILLING_EDIT))):
+    """Record what happened to a statement.
+
+    Marked by a person, never inferred. This app does not post letters or send
+    email on its own, so a status it set itself would be a claim nobody
+    verified - and "delivered" is exactly the claim that matters when a patient
+    says they never received the bill.
+    """
+    statement = get_or_404(db, ehr.Statement, statement_id)
+    me = auth.current_user(request, db)
+    try:
+        statement.status = ehr.Delivery(status)
+    except ValueError:
+        return RedirectResponse("/billing/patients", status_code=303)
+    if statement.is_out and not statement.sent_on:
+        statement.sent_on = date.today()
+    log(db, f"Statement {statement.id} -> {statement.status.value}", "client",
+        statement.client_id, user_id=getattr(me, "id", None))
+    db.commit()
+    return RedirectResponse("/billing/patients", status_code=303)
+
+
+# --- the billing worklists ------------------------------------------------
+
+
+@app.get("/billing/charges", response_class=HTMLResponse)
+def billing_charges(request: Request, q: str = "", status: str = "",
+                    db: Session = Depends(get_db),
+                    _=Depends(needs(perms.BILLING_EDIT))):
+    """Every charge, with the transitions its current status actually allows.
+
+    The buttons come from CHARGE_NEXT rather than from the template deciding
+    what to draw. One place defines the workflow, so a route can refuse a
+    transition that was never offered, and nobody has to keep a template and a
+    state machine in step by hand.
+    """
+    rows = (db.query(ehr.Charge)
+            .options(joinedload(ehr.Charge.client),
+                     selectinload(ehr.Charge.payments)))
+    if status:
+        try:
+            rows = rows.filter(ehr.Charge.status == ehr.ChargeStatus(status))
+        except ValueError:
+            pass
+    charges = rows.order_by(ehr.Charge.service_on.desc(),
+                            ehr.Charge.id.desc()).all()
+    term = q.strip().lower()
+    if term:
+        charges = [c for c in charges
+                   if term in (c.client.name if c.client else "").lower()
+                   or term in (c.cpt or "").lower()
+                   or term in (c.description or "").lower()]
+
+    return render("billing_charges.html", ctx(
+        request, db, nav="billing", charges=charges, q=q, status=status,
+        next_steps=ehr.CHARGE_NEXT, statuses=list(ehr.ChargeStatus),
+        clients=db.query(Client).filter_by(archived=False)
+                 .order_by(Client.last_name).all(),
+        cpts=ehr.COMMON_CPT,
+        note=request.session.pop("billing_note", ""),
+        error=request.session.pop("billing_error", "")))
+
+
+@app.post("/charges/{charge_id}/advance")
+def charge_advance(charge_id: int, request: Request, to: str = F(""),
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.BILLING_EDIT))):
+    """Move a charge along its workflow, refusing anything not allowed.
+
+    Checked against CHARGE_NEXT rather than accepting whatever was posted. A
+    status field that takes any value it is given is how an unapproved charge
+    reaches a payer - the button was never on screen, but the form still is.
+    """
+    charge = get_or_404(db, ehr.Charge, charge_id)
+    me = auth.current_user(request, db)
+    try:
+        wanted = ehr.ChargeStatus(to)
+    except ValueError:
+        request.session["billing_error"] = "That is not a charge status."
+        return RedirectResponse("/billing/charges", status_code=303)
+
+    allowed = [s for s, _label in ehr.CHARGE_NEXT.get(charge.status, [])]
+    if wanted not in allowed:
+        request.session["billing_error"] = (
+            f"A {charge.status.value.replace('_', ' ')} charge cannot go "
+            f"straight to {wanted.value.replace('_', ' ')}.")
+        return RedirectResponse("/billing/charges", status_code=303)
+
+    charge.status = wanted
+    if wanted == ehr.ChargeStatus.submitted:
+        charge.submitted_at = datetime.utcnow()
+    log(db, f"Charge {charge.cpt} -> {wanted.value}", "client",
+        charge.client_id, user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["billing_note"] = (
+        f"{charge.cpt} is now {wanted.value.replace('_', ' ')}.")
+    return RedirectResponse("/billing/charges", status_code=303)
+
+
+@app.get("/billing/insurance", response_class=HTMLResponse)
+def insurance_collections(request: Request, show: str = "all", q: str = "",
+                          db: Session = Depends(get_db),
+                          _=Depends(needs(perms.BILLING_EDIT))):
+    """Claims by what the payer did with them."""
+    groups = {
+        "all": None,
+        "rejected": [ehr.ClaimStatus.rejected],
+        "denied": [ehr.ClaimStatus.denied],
+        "waiting": [ehr.ClaimStatus.submitted, ehr.ClaimStatus.accepted,
+                    ehr.ClaimStatus.waiting_adjudication],
+        "investigate": [ehr.ClaimStatus.needs_investigation],
+        "paid": [ehr.ClaimStatus.paid],
+    }
+    rows = (db.query(ehr.Claim)
+            .options(joinedload(ehr.Claim.client), joinedload(ehr.Claim.charge)))
+    wanted = groups.get(show)
+    if wanted:
+        rows = rows.filter(ehr.Claim.status.in_(wanted))
+    claims = rows.order_by(ehr.Claim.id.desc()).all()
+    term = q.strip().lower()
+    if term:
+        claims = [c for c in claims
+                  if term in (c.client.name if c.client else "").lower()
+                  or term in (c.payer or "").lower()]
+
+    counts = {}
+    for key, statuses in groups.items():
+        query = db.query(func.count(ehr.Claim.id))
+        if statuses:
+            query = query.filter(ehr.Claim.status.in_(statuses))
+        counts[key] = query.scalar() or 0
+
+    return render("billing_insurance.html", ctx(
+        request, db, nav="billing", claims=claims, show=show, q=q,
+        counts=counts))
+
+
+@app.get("/billing/analytics", response_class=HTMLResponse)
+def billing_analytics(request: Request, db: Session = Depends(get_db),
+                      _=Depends(needs(perms.BILLING_EDIT))):
+    """Gross charges against what was actually collected, by month.
+
+    Two figures side by side rather than one, because gross charges on their
+    own flatter a practice: billing three hundred and collecting a hundred and
+    twenty is a different business from billing three hundred and collecting
+    two ninety, and a single "revenue" line cannot tell them apart.
+    """
+    charges = (db.query(ehr.Charge)
+               .options(selectinload(ehr.Charge.payments)).all())
+
+    months: dict[str, dict] = {}
+    for charge in charges:
+        key = charge.service_on.strftime("%Y-%m")
+        row = months.setdefault(key, {"gross": 0.0, "net": 0.0})
+        row["gross"] += float(charge.amount or 0)
+        row["net"] += charge.received
+    series = [{"month": k, **v} for k, v in sorted(months.items())]
+    peak = max([max(r["gross"], r["net"]) for r in series], default=0) or 1
+
+    visits = db.query(func.count(ehr.Encounter.id)).scalar() or 0
+    gross = sum(float(c.amount or 0) for c in charges)
+    net = sum(c.received for c in charges)
+    return render("billing_analytics.html", ctx(
+        request, db, nav="billing", series=series, peak=peak,
+        visits=visits, gross=gross, net=net,
+        collection_rate=(net / gross * 100) if gross else 0))
+
+
+@app.get("/billing/pay", response_class=HTMLResponse)
+def billing_pay(request: Request, db: Session = Depends(get_db),
+                _=Depends(needs(perms.BILLING_EDIT))):
+    return render("billing_pay.html", ctx(
+        request, db, nav="billing",
+        clients=db.query(Client).filter_by(archived=False)
+                 .order_by(Client.last_name).all(),
+        result=request.session.pop("pay_result", None),
+        note=request.session.pop("billing_note", ""),
+        error=request.session.pop("billing_error", "")))
+
+
+def _luhn(number: str) -> bool:
+    digits = [int(c) for c in number if c.isdigit()]
+    if len(digits) < 12:
+        return False
+    total, parity = 0, len(digits) % 2
+    for i, digit in enumerate(digits):
+        if i % 2 == parity:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return total % 10 == 0
+
+
+@app.post("/billing/pay")
+def billing_pay_run(request: Request, client_id: str = F(""),
+                    amount: str = F(""), card: str = F(""),
+                    exp_month: str = F(""), exp_year: str = F(""),
+                    cvc: str = F(""), db: Session = Depends(get_db),
+                    _=Depends(needs(perms.BILLING_EDIT))):
+    """A demonstration card payment. No processor is contacted, ever.
+
+    The outcome is decided by a Luhn check on the number typed in, so the
+    screen can show both a success and a failure on demand. Nothing about the
+    card is stored beyond the last four digits - not the number, not the CVC,
+    not even hashed. A demo that keeps a full PAN is a demo that has put the
+    practice inside PCI scope for no benefit at all.
+    """
+    client = db.get(Client, _int_or_none(client_id) or 0)
+    value = _money(amount)
+    if client is None or value <= 0:
+        request.session["billing_error"] = "Choose a patient and an amount."
+        return RedirectResponse("/billing/pay", status_code=303)
+
+    digits = "".join(c for c in card if c.isdigit())
+    ok = _luhn(digits)
+    last4 = digits[-4:] if len(digits) >= 4 else ""
+    me = auth.current_user(request, db)
+
+    if ok:
+        db.add(ehr.Payment(
+            client_id=client.id, amount=value,
+            source=ehr.PaymentSource.patient, method="Card",
+            reference=f"demo ****{last4}",
+            note="DEMONSTRATION - no real transaction was processed",
+            posted_by=(me.name if me else "")[:160]))
+        log(db, f"Demo card payment {value} (no real transaction)", "client",
+            client.id, user_id=getattr(me, "id", None), ip=client_ip(request))
+        db.commit()
+
+    request.session["pay_result"] = {
+        "ok": ok, "amount": f"{value:.2f}", "last4": last4,
+        "patient": client.name,
+        "detail": ("Recorded as a patient payment. No processor was contacted."
+                   if ok else
+                   "The card number failed its checksum, so this demonstration "
+                   "reports a decline. Nothing was recorded."),
+    }
+    return RedirectResponse("/billing/pay", status_code=303)
