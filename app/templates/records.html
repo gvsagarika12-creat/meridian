@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Patient records{% endblock %}
+{% block chrome %}
+<div class="crumb">
+  <a href="/">My Dashboard</a><span class="sep">&rsaquo;</span>Patient Records
+  <div class="actions">
+    <form class="inline" method="post" action="/records/save">
+      <button class="btn btn-green">&#11015; Download Excel</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+  <p class="hint" style="margin-bottom:16px">
+    One row per patient. Everything the patient told us on a form sits beside
+    everything the practice recorded about them &mdash; medications, diagnoses,
+    allergies, vitals. {{ clients|length }} patient{{ 's' if clients|length != 1 }}.
+  </p>
+
+  <div class="scroll" style="max-height:72vh;overflow:auto">
+    <table class="records">
+      {# Columns are addressed by heading, never by position. The list in
+         records.py is edited often, and index 8 meaning "Diagnoses" was true
+         until the day it was not. #}
+      {% set WIDE = ["Diagnoses", "Active Meds", "Inactive Meds",
+                     "Presenting Problem", "Current Medications (self-reported)",
+                     "Substance Use", "Archive Conditions", "Archive Procedures",
+                     "Match Detail", "Eligibility Detail"] %}
+      <thead>
+        <tr>{% for h in headings %}<th>{{ h }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for client, row in rows %}
+        <tr>
+          {% for value in row %}
+          {% set head = headings[loop.index0] %}
+          <td {{ 'class=grow' if head in WIDE }}>
+            {% if head == "Patient Name" %}
+              <a href="/clients/{{ client.id }}">{{ value }}</a>
+            {% elif head == "Match" and value %}
+              <span class="verdict {{ value | lower | replace(' ', '-') }}">{{ value }}</span>
+            {% elif head == "Eligibility" and value %}
+              <span class="verdict {{ value | lower | replace(' ', '-') }}">{{ value }}</span>
+            {% elif head == "Match %" and value %}
+              <b style="font-variant-numeric:tabular-nums">{{ value }}</b>
+            {% elif value %}{{ value }}
+            {% else %}<span class="hint">&mdash;</span>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ headings|length }}" class="hint">No patients yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="hint" style="margin-top:16px">
+    {% if hosted %}
+    <b>Download Excel</b> sends the file to your browser the normal way.
+    {% else %}
+    <b>Download Excel</b> writes the file to your Downloads folder and tells you the
+    exact path &mdash; the desktop window has no download manager, so a normal browser
+    download would silently do nothing here.
+    {% endif %}
+    The file has two sheets: this table, and every individual answer. Each download
+    is recorded in the audit log.
+  </p>
+</div>
+<style>
+  .verdict{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12.5px;
+           font-weight:600;white-space:nowrap}
+  .verdict.match          {background:#e5f1ea;color:#1e5636}
+  .verdict.partial-match  {background:#fdf2dc;color:#8a5a00}
+  .verdict.looks-eligible{background:#e5f1ea;color:#1e5636}
+  .verdict.needs-review  {background:#fdf2dc;color:#8a5a00}
+  .verdict.not-eligible  {background:#f9e6e4;color:#8a2f28}
+  .verdict.no-hospital-id,
+  .verdict.id-not-found-in-archive,
+  .verdict.nothing-to-compare{background:#eef1f3;color:#5b6770}
+</style>
+{% endblock %}
+{% block content %}{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Home &middot; {{ practice.short_name or practice.name }}{% endblock %}
+
+{% block chrome %}<div class="crumb">Home</div>{% endblock %}
+
+{% block content %}
+<div class="tiles">
+  {% if can(user, P.SUBMISSIONS_SEND) %}
+  <a class="tile tile-orange" href="/send"><span class="ico">&#9993;</span>Send Form to Client</a>{% endif %}
+  {% if can(user, P.SUBMISSIONS_VIEW) %}
+  <a class="tile tile-lime" href="/submissions"><span class="ico">&#128203;</span>See Client Forms</a>{% endif %}
+  {% if can(user, P.CLIENTS_EDIT) %}
+  <a class="tile tile-red" href="/clients"><span class="ico">&#128100;</span>Add New Client</a>{% endif %}
+</div>
+
+<div class="cols">
+  <div class="panel">
+    <h2>&#10003; Latest forms received</h2>
+    <div class="body">
+      <table>
+        <tr><th>Client</th><th>When</th><th>Form</th><th></th><th></th></tr>
+        {% for s in received %}
+        <tr>
+          <td>{{ s.client.name if s.client else '-' }}</td>
+          <td>{{ s.submitted_at|ago }}</td>
+          <td>{{ s.form.name }}</td>
+          <td>{% if not s.read_by_staff %}<span class="pill">Unread</span>{% endif %}</td>
+          <td><a class="btn btn-sm" href="/submissions">View</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="hint">Nothing received yet.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>&#128340; Pending forms</h2>
+    <div class="body">
+      <table>
+        <tr><th>Client</th><th>When</th><th>Form</th><th></th></tr>
+        {% for s in pending %}
+        <tr>
+          <td>{{ s.client.name if s.client else '-' }}</td>
+          <td>{{ s.sent_at|ago }}</td>
+          <td>{{ s.form.name }}</td>
+          <td><a class="btn btn-sm" href="/submissions/{{ s.id }}">View</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="hint">No pending forms.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>&#128197; Upcoming Appointments</h2>
+    <div class="body">
+      <div class="empty">&#10003; You have no upcoming appointments.</div>
+      <p class="hint">Scheduling is not part of this build.</p>
+    </div>
+  </div>
+
+  {% if can(user, P.EVENTS_VIEW) %}
+  <div class="panel">
+    <h2>&#9889; Latest Account Events</h2>
+    <div class="body">
+      <table>
+        <tr><th>Event</th><th>When</th></tr>
+        {% for e in events %}
+        <tr>
+          <td>
+            <span class="dot {{ {'Form Sent':'d-orange','Client Logged In':'d-blue',
+              'Form Submitted':'d-green','Consent Form Signed':'d-yellow'}.get(e.action,'d-grey') }}"></span>
+            {{ e.action }}
+          </td>
+          <td>{{ e.at|ago }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <p style="text-align:center;margin:12px 0 0"><a href="/events">View All</a></p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset password</title>
+<link rel="stylesheet" href="/static/app.css"></head><body style="background:#fff">
+<div style="background:#1c5a6e;padding:18px 26px;color:#fff;font-size:24px;font-weight:600">
+  {{ practice.name }}</div>
+<div style="max-width:520px;margin:64px auto;padding:0 20px">
+
+{% if sent %}
+
+  {% if link %}
+    {# Email is not configured, so there is nothing to "check". Give them the link. #}
+    <h1 style="font-size:31px;color:#1c5a6e;margin:0 0 14px">Here is your reset link</h1>
+    <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+                padding:14px 18px;margin-bottom:20px;font-size:14.5px">
+      <b>No mail server is configured</b>, so nothing was emailed. The link is below.
+    </div>
+    <p style="margin-bottom:10px">Click to choose a new password:</p>
+    <p style="margin:0 0 20px">
+      <a class="btn btn-green" href="{{ link }}"
+         style="padding:13px 28px;font-size:16px">Set a new password</a></p>
+    <p class="hint" style="word-break:break-all;background:#f6f9f8;padding:10px 13px;
+       border-radius:3px;font-family:monospace;font-size:12.5px">{{ link }}</p>
+    <p class="hint" style="margin-top:16px">Works once, expires in 2 hours.</p>
+    <p class="hint" style="margin-top:20px;border-top:1px solid var(--rule);padding-top:14px">
+      Once SMTP is set in <code>.env</code>, this link is emailed instead of being
+      shown here.</p>
+
+  {% elif unconfigured %}
+    {# Unconfigured, and no token was made - so no account matched that address. #}
+    <h1 style="font-size:31px;color:#1c5a6e;margin:0 0 14px">No link to show</h1>
+    <div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+                padding:14px 18px;margin-bottom:20px;font-size:14.5px">
+      No active account matches <b>{{ email }}</b>.
+    </div>
+    <p class="hint">Check the spelling, or
+      <a href="/register">create an account</a>. An administrator can also set a
+      password for you from the Staff screen.</p>
+
+  {% else %}
+    <h1 style="font-size:32px;color:#1c5a6e;margin:0 0 14px">Check your email</h1>
+    <div style="background:#e5f1ea;border-left:3px solid #2a7048;color:#1e5636;
+                padding:14px 18px;margin-bottom:20px;font-size:15px">
+      If an account exists for <b>{{ email }}</b>, a reset link is on its way.
+    </div>
+    <p class="hint">The link works once and expires in 2 hours.</p>
+  {% endif %}
+
+  <p style="margin-top:26px"><a href="/login">&larr; Back to sign in</a></p>
+
+{% else %}
+  <h1 style="font-size:32px;color:#1c5a6e;margin:0 0 10px">Reset your password</h1>
+  <p class="hint" style="margin-bottom:24px">Enter your email and we will send you a
+     link to choose a new password.</p>
+
+  {% if unconfigured %}
+  <div style="background:#eef4fb;border-left:3px solid #3d9ad1;color:#1f4d6b;
+              padding:12px 16px;margin-bottom:20px;font-size:14px">
+    No mail server is configured yet, so the link will be shown on the next screen
+    rather than emailed.
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+              padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/forgot" style="display:grid;gap:18px">
+    <label>Email<input type="email" name="email" required autofocus value="{{ email }}"
+      autocomplete="username"
+      style="width:100%;padding:12px;border:1px solid #ccd4da;border-radius:4px;
+             background:#eef4fb;font-size:15px"></label>
+    <div><button class="btn btn-green" style="padding:13px 30px;font-size:16px">
+      Get reset link</button></div>
+  </form>
+  <p style="margin-top:26px"><a href="/login">&larr; Back to sign in</a></p>
+{% endif %}
+</div></body></html>

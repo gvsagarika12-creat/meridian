@@ -1,0 +1,9 @@
+{% extends "patient_base.html" %}
+{% block body %}
+<div class="pt-card" style="text-align:center;padding:60px 40px">
+  <div style="font-size:48px;color:#d9736b;line-height:1">&#9888;</div>
+  <h1 style="font-size:25px;margin:16px 0 10px">Link unavailable</h1>
+  <p>{{ reason }}</p>
+  <p class="hint">Phone {{ practice.phone }}</p>
+</div>
+{% endblock %}

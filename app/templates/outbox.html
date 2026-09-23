@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Outbox{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Outbox</div>{% endblock %}
+{% block content %}
+<div class="panel"><h2>&#128233; Delivery log</h2><div class="body">
+{% if 'file' in backends.email %}
+<div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+            padding:15px 18px;margin-bottom:18px;font-size:14.5px">
+  <b>No mail server configured &mdash; nothing is being sent.</b>
+  <p style="margin:8px 0 0">Messages are written to <code>outbox.log</code> in the
+    app folder. Patients receive nothing. Copy the link from each submission and
+    send it yourself in the meantime.</p>
+  <p style="margin:10px 0 0">To switch it on, edit <code>.env</code> in the app folder:</p>
+  <pre style="background:#fff;border:1px solid #e4d9b8;border-radius:3px;
+              padding:11px 13px;margin:8px 0 0;font-size:12.5px;overflow-x:auto"
+>EMAIL_BACKEND=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@yourdomain.com
+SMTP_PASSWORD=your-16-char-app-password
+SMTP_FROM=you@yourdomain.com</pre>
+  <p style="margin:10px 0 0">Then close and reopen the app. Gmail needs an
+    <b>App Password</b>, not your normal one.</p>
+</div>
+{% else %}
+<p class="hint" style="margin-bottom:14px">
+  Email: <b>{{ backends.email }}</b> &middot; SMS: <b>{{ backends.sms }}</b>.</p>
+{% endif %}
+<table>
+  <tr><th>When</th><th>Channel</th><th>To</th><th>Status</th><th>Detail</th></tr>
+  {% for m in rows %}
+  <tr>
+    <td>{{ m.at|ago }}</td>
+    <td>{{ m.channel }}</td>
+    <td>{{ m.recipient or '&mdash;'|safe }}</td>
+    <td>
+      {% if m.status == 'sent' %}<span style="color:#2a7048;font-weight:600">sent</span>
+      {% elif m.status == 'not sent' %}<span style="color:#8a5c08;font-weight:600">not sent</span>
+      {% elif m.status == 'failed' %}<span style="color:#a93a31;font-weight:600">failed</span>
+      {% else %}<span class="hint">skipped</span>{% endif %}
+    </td>
+    <td class="hint">{{ m.detail }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="hint">Nothing sent yet.</td></tr>
+  {% endfor %}
+</table>
+<p class="hint" style="margin-top:14px">Form links are never recorded here &mdash; a link
+  opens a patient's form, so it is a credential rather than a reference.</p>
+</div></div>
+{% endblock %}

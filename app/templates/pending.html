@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Awaiting access</title>
+<link rel="stylesheet" href="/static/app.css"></head><body style="background:#fff">
+<div class="topbar"><div class="brand">{{ practice.short_name or practice.name }}</div>
+  <nav><a href="/logout">Sign out</a></nav></div>
+<div style="max-width:520px;margin:64px auto;padding:0 20px">
+  <div style="font-size:46px;line-height:1;color:#8a5c08">&#9203;</div>
+  <h1 style="font-size:31px;margin:14px 0 12px">Waiting for approval</h1>
+  <p>Hello {{ user.name }} &mdash; your account exists and you are signed in, but it
+     has not been given access to anything yet.</p>
+  <p class="hint">An administrator at {{ practice.name }} needs to assign you a role.
+     Once they do, sign out and back in and the rest of the system will appear.</p>
+  <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+              padding:14px 18px;margin:24px 0;font-size:14.5px">
+    This is deliberate. Anyone can create a login here, but nobody reaches patient
+    records until a person who already has access says so.
+  </div>
+  <p class="hint">If this is taking a while, call {{ practice.phone }}.</p>
+  <p style="margin-top:24px"><a class="btn" href="/logout">Sign out</a></p>
+</div></body></html>

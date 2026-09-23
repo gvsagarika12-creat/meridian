@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Get URL{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/forms">My Forms</a>
+<span class="sep">&rsaquo;</span><a href="/forms/{{ form.id }}">{{ form.name }}</a>
+<span class="sep">&rsaquo;</span>Get URL</div>{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width:720px">
+  <h2>&#128279; Get URL</h2>
+  <div class="body">
+    <p>To send this form to one patient, use <b>Send Form to Client</b>. That makes a
+      personal link tied to them which expires and can be revoked.</p>
+
+    <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+                padding:14px 18px;margin:18px 0;font-size:14.5px">
+      <b>A public link is not built.</b> It would let anyone holding the address submit
+      a form as anybody, with no way to tie the answers to a real patient record. If you
+      need one for a website embed, it can be added &mdash; but it needs its own rules
+      about what happens to an unmatched submission.
+    </div>
+
+    <p style="margin-top:20px">
+      <a class="btn btn-green" href="/send">Send to a client</a>
+      <a class="btn" href="/forms/{{ form.id }}">Back to editor</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

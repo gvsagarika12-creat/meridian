@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Spreadsheet saved{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span><a href="/records">Patient Records</a>
+<span class="sep">&rsaquo;</span>Saved</div>{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width:740px">
+  <h2>&#10003; Spreadsheet saved</h2>
+  <div class="body">
+    <div style="background:#e5f1ea;border-left:3px solid #2a7048;color:#1e5636;
+                padding:15px 18px;margin-bottom:20px">
+      <b>{{ count }} patient{{ 's' if count != 1 }} &middot;
+         {{ (size / 1024)|round|int }} KB &middot; 2 sheets</b>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px">
+      <form class="inline" method="post" action="/records/open">
+        <input type="hidden" name="filename" value="{{ filename }}">
+        <button class="btn btn-green" style="padding:12px 24px;font-size:16px">
+          &#128202; Open in Excel</button>
+      </form>
+      <form class="inline" method="post" action="/records/folder">
+        <input type="hidden" name="filename" value="{{ filename }}">
+        <button class="btn" style="padding:12px 20px">&#128193; Show in folder</button>
+      </form>
+    </div>
+
+    <p style="margin-bottom:6px" class="hint">Saved to:</p>
+    <p style="background:#f6f9f8;border:1px solid var(--rule);border-radius:3px;
+              padding:12px 14px;font-family:monospace;font-size:13px;
+              word-break:break-all;margin:0 0 20px">{{ path }}</p>
+
+    <table style="width:auto;font-size:14.5px">
+      <tr><th style="padding-right:22px">Sheet 1</th>
+          <td><b>Patient records</b> &mdash; one row per patient, chart and form
+              answers side by side</td></tr>
+      <tr><th>Sheet 2</th>
+          <td><b>Form answers</b> &mdash; every answer, one per row, each field
+              in its own cell</td></tr>
+    </table>
+
+    <p style="margin-top:24px;border-top:1px solid var(--rule);padding-top:16px">
+      <a class="btn" href="/records">&larr; Back to records</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

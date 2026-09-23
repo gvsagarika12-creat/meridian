@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>Calendar
+  <div class="actions">
+    <a class="btn" href="/calendar">Today</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+{% if error %}
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);color:var(--bad);
+            padding:12px 15px;margin-bottom:18px;font-size:14.5px">{{ error }}</div>
+{% endif %}
+
+<div class="cal-layout">
+
+  <!-- ------------------------------------------------------- the month -->
+  <div>
+    <div class="cal-head">
+      <a class="btn btn-sm" href="/calendar?year={{ prev_y }}&month={{ prev_m }}&provider={{ provider }}">&larr;</a>
+      <h1>{{ month_name }}</h1>
+      <a class="btn btn-sm" href="/calendar?year={{ next_y }}&month={{ next_m }}&provider={{ provider }}">&rarr;</a>
+
+      <form method="get" action="/calendar" style="margin-left:auto;display:flex;gap:8px">
+        <input type="hidden" name="year" value="{{ year }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <select name="provider" onchange="this.form.submit()">
+          <option value="0">Everyone</option>
+          {% for p in providers %}
+          <option value="{{ p.id }}" {{ 'selected' if provider == p.id }}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    <table class="cal">
+      <thead><tr>
+        {% for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<th>{{ d }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for week in weeks %}
+        <tr>
+          {% for day, appts, in_month in week %}
+          <td class="{{ 'out' if not in_month }} {{ 'today' if day == today }}">
+            <span class="num">{{ day.day }}</span>
+            {% for a in appts %}
+            <a class="ap {{ a.status.value | replace(' ','-') }}"
+               href="/clients/{{ a.client_id }}"
+               title="{{ a.kind }}{{ ' · ' ~ a.location if a.location }}{{ ' · ' ~ a.notes if a.notes }}">
+              {%- if a.at_time %}<b>{{ a.at_time }}</b> {% endif -%}
+              {{ a.client.first_name }} {{ a.client.last_name[:1] }}
+            </a>
+            {% endfor %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if can(user, P.SCHEDULE_EDIT) %}
+    <div class="panel" style="margin-top:22px;max-width:760px">
+      <h2>&#10010; Book an appointment</h2>
+      <div class="body">
+        <form method="post" action="/calendar/book"
+              style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                     gap:12px;align-items:end">
+          <label style="grid-column:span 2">Patient
+            <select name="client_id" required>
+              {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+            </select></label>
+          <label>Date<input type="date" name="on_day" required></label>
+          <label>Time<input type="time" name="at_time"></label>
+          <label>Minutes<input type="text" name="minutes" value="30" inputmode="numeric"></label>
+          <label>Kind
+            <select name="kind">
+              {% for k in kinds %}<option>{{ k }}</option>{% endfor %}
+            </select></label>
+          <label>Provider
+            <select name="provider_id">
+              <option value="">Unassigned</option>
+              {% for p in providers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            </select></label>
+          <label>Location<input type="text" name="location" placeholder="Room 2 / Telehealth"></label>
+          <label style="grid-column:1 / -1">Notes
+            <input type="text" name="notes" placeholder="Anything the clinician should know"></label>
+          <div style="grid-column:1 / -1"><button class="btn btn-green">Book</button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ------------------------------------------------------ reminders -->
+  <div class="panel remind">
+    <h2>&#128276; Needs attention ({{ reminders|length }})</h2>
+    <div class="body">
+      <p class="hint" style="margin-top:0">
+        Worked out fresh each time this page loads. Finish the form or mark the
+        appointment and the line disappears &mdash; there is nothing to tick off.
+      </p>
+      {% for r in reminders %}
+      <div class="rem {{ r.urgency }}">
+        <div><b>{{ r.what }}</b></div>
+        <div>
+          {% if r.client_id %}<a href="/clients/{{ r.client_id }}">{{ r.who }}</a>
+          {% else %}{{ r.who }}{% endif %}
+          <span class="hint">&middot; {{ r.detail }}</span>
+        </div>
+      </div>
+      {% else %}
+      <p class="hint">Nothing outstanding. No appointments in the next two days
+         and no form has been waiting more than three.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<style>
+  .cal-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:24px;align-items:start}
+  @media (max-width:1100px){.cal-layout{grid-template-columns:1fr}}
+
+  .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .cal-head h1{font-size:21px;font-weight:600;margin:0;min-width:190px}
+  .cal-head select{padding:6px 9px;border:1px solid #d9d6d0;border-radius:6px;
+    font-family:inherit;font-size:14px}
+
+  table.cal{width:100%;border-collapse:collapse;background:var(--surface);
+    border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+  table.cal th{font-size:11px;text-transform:uppercase;letter-spacing:.8px;
+    color:var(--ink-3);font-weight:600;padding:9px 6px;border-bottom:1px solid var(--rule)}
+  table.cal td{border:1px solid var(--rule);vertical-align:top;height:104px;width:14.28%;
+    padding:5px 6px 7px}
+  table.cal td.out{background:#faf9f7}
+  table.cal td.out .num{color:var(--ink-3)}
+  table.cal td.today{box-shadow:inset 0 0 0 2px var(--accent)}
+  table.cal .num{font-size:12.5px;color:var(--ink-2);display:block;margin-bottom:4px}
+  table.cal td.today .num{color:var(--accent);font-weight:700}
+
+  .ap{display:block;font-size:12px;line-height:1.35;padding:2px 5px;border-radius:4px;
+    margin-bottom:3px;background:var(--accent-soft);color:var(--accent-dark);
+    border-left:2px solid var(--accent);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .ap:hover{text-decoration:none;filter:brightness(.97)}
+  .ap.attended{background:var(--good-soft);color:var(--good);border-left-color:var(--good)}
+  .ap.cancelled,.ap.no-show{background:#f1eeec;color:var(--ink-3);
+    border-left-color:var(--ink-3);text-decoration:line-through}
+
+  .remind .rem{padding:9px 0;border-top:1px solid var(--rule);font-size:14px}
+  .remind .rem:first-of-type{border-top:0}
+  .rem.overdue b{color:var(--bad)}
+  .rem.soon b{color:var(--accent-dark)}
+  .rem.info b{color:var(--ink-2);font-weight:600}
+
+  .panel label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
+  .panel label input,.panel label select{padding:8px 10px;border:1px solid #ccd4da;
+    border-radius:6px;font-family:inherit;font-size:14.5px}
+</style>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

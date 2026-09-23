@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ practice.name }}</title><link rel="stylesheet" href="/static/app.css"></head><body>
+{% if staff %}
+<div class="staff-bar">
+  <a href="/submissions">&larr; Back to the app</a>
+  <span>You are signed in as staff &mdash; a patient does not see this bar.</span>
+  <a href="/records" style="margin-left:auto">Records</a>
+</div>
+{% endif %}
+
+<div class="pt-head">
+  <div class="pt-logo">
+    {% for letter in practice.logo_letters %}<i
+      style="background:{{ practice.logo_colours[loop.index0 % practice.logo_colours|length] }}"
+      >{{ letter }}</i>{% endfor %}
+  </div>
+  <div class="pt-meta">
+    <div>{{ practice.address }}</div>
+    <div>Phone {{ practice.phone }} &nbsp; Fax {{ practice.fax }}</div>
+    <div><a href="#">{{ practice.website }}</a></div>
+  </div>
+</div>
+{% block body %}{% endblock %}
+</body></html>

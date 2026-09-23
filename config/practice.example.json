@@ -1,0 +1,21 @@
+{
+  "name": "Your Practice Name, Inc.",
+  "address": "P.O. Box 0000, City, ST 00000",
+  "phone": "(000) 000-0000",
+  "fax": "(000) 000-0000",
+  "website": "www.example.com",
+  "_comment": "logo_letters are the tiles shown on patient forms; one colour per letter.",
+  "logo_letters": [
+    "Y",
+    "P",
+    "N",
+    "I"
+  ],
+  "logo_colours": [
+    "#5ec9c4",
+    "#4aa3d8",
+    "#2f7fc4",
+    "#16406b"
+  ],
+  "short_name": "Your Practice"
+}

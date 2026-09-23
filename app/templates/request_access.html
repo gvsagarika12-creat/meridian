@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Request access</title>
+<link rel="stylesheet" href="/static/app.css"></head><body style="background:#fff">
+<div style="background:#1c5a6e;padding:18px 26px;color:#fff;font-size:24px;font-weight:600">
+  {{ practice.name }}</div>
+<div style="max-width:470px;margin:56px auto;padding:0 20px">
+
+{% if sent %}
+  <h1 style="font-size:32px;color:#1c5a6e;margin:0 0 14px">Request sent</h1>
+  <div style="background:#e5f1ea;border-left:3px solid #2a7048;color:#1e5636;
+              padding:14px 18px;margin-bottom:20px;font-size:15px">
+    An administrator will review it.
+  </div>
+  <p class="hint">If it is approved you will be given a temporary password to sign in
+     with. Nothing has been created yet.</p>
+  <p style="margin-top:26px"><a href="/login">&larr; Back to sign in</a></p>
+{% else %}
+  <h1 style="font-size:32px;color:#1c5a6e;margin:0 0 10px">Request an account</h1>
+  <p class="hint" style="margin-bottom:24px">This system holds patient records, so
+     accounts are created by an administrator rather than signed up for. Tell us who
+     you are and someone will review it.</p>
+  {% if error %}
+  <div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+              padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/request-access" style="display:grid;gap:17px">
+    <label>Your name<input type="text" name="name" required autofocus value="{{ name }}"
+      style="width:100%;padding:12px;border:1px solid #ccd4da;border-radius:4px;
+             background:#eef4fb;font-size:15px"></label>
+    <label>Your email<input type="email" name="email" required value="{{ email }}"
+      style="width:100%;padding:12px;border:1px solid #ccd4da;border-radius:4px;
+             background:#eef4fb;font-size:15px"></label>
+    <label>Your role at the practice <span class="hint">(optional)</span>
+      <textarea name="note" rows="3"
+        style="width:100%;padding:11px;border:1px solid #ccd4da;border-radius:4px;
+               background:#eef4fb;font-family:inherit;font-size:15px">{{ note }}</textarea></label>
+    <div><button class="btn btn-green" style="padding:13px 30px;font-size:16px">
+      Send request</button></div>
+  </form>
+  <p style="margin-top:26px"><a href="/login">&larr; Back to sign in</a></p>
+{% endif %}
+</div></body></html>

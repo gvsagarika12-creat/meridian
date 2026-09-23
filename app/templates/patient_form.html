@@ -1,0 +1,263 @@
+{% extends "patient_base.html" %}
+{% block body %}
+
+{% if preview %}
+<div class="banner" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+  <a class="btn btn-sm" href="/forms/{{ form.id }}">&larr; Back to editor</a>
+  <span>Preview &mdash; this is what the patient sees. Nothing is saved.</span>
+  <a href="/" style="margin-left:auto">Dashboard</a>
+</div>
+{% endif %}
+
+<div class="progress"><i style="width:{{ percent }}%"></i></div>
+
+<div class="pt-bar">
+  {% if preview %}
+    {% if page > 0 %}
+    <a class="back-top" href="/preview/{{ form.id }}?page={{ page - 1 }}">&larr; Back</a>
+    {% else %}<span></span>{% endif %}
+  {% elif page > 0 %}
+    <form method="post" action="/f/{{ sub.token }}/save" class="inline">
+      <input type="hidden" name="_page" value="{{ page }}">
+      <input type="hidden" name="_go" value="back">
+      <button class="back-top" type="submit" formnovalidate>&larr; Back</button>
+    </form>
+  {% else %}<span></span>{% endif %}
+
+  <span class="pt-step">{{ percent }}%
+    {%- if page > 0 %} &middot; page {{ page }} of {{ total }}{% endif %}</span>
+</div>
+
+{% if errors %}
+<div class="pt-card" style="border-left:4px solid #d9534f;padding:20px 26px;min-height:0">
+  <b style="color:#b3423a">Please answer these before submitting:</b>
+  <ul style="margin:10px 0 0 18px;padding:0">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="pt-card">
+  <div class="pg">{{ page if page else 1 }} / {{ total + 1 }}</div>
+
+  {% if page == 0 %}
+    {# Intro page - matches the IntakeQ packet cover #}
+    <p>Hello {{ client_first_name }},</p>
+    <p>Please complete this Patient Packet so that we may better serve you upon your
+       appointment arrival.</p>
+    <p style="margin-top:30px">Thank you,<br>{{ practice.name }}</p>
+    <p style="text-align:center;margin-top:40px">
+      <a class="btn btn-green" style="padding:12px 28px;font-size:17px"
+         href="{{ '/preview/' ~ form.id ~ '?page=1' if preview else '/f/' ~ sub.token ~ '?page=1' }}">
+        Start &rarr;</a>
+    </p>
+
+  {% else %}
+    <form method="post"
+          action="{{ '#' if preview else ('/f/' ~ sub.token ~ ('/submit' if page == total else '/save')) }}">
+      <input type="hidden" name="_page" value="{{ page }}">
+
+      {% for q in questions %}
+      {% set answer = answers.get(q.id) if answers else None %}
+      {% set given = answer.values if answer else [] %}
+      {% set rated = answer.mapping if answer else
+                     (prefill_for(sub, q) if sub else {}) %}
+      <div class="pt-q">
+        <label class="q">{{ loop.index }}. {{ q.text }}
+          {%- if q.required %} <span class="req">*</span>{% endif %}</label>
+
+        {% if q.qtype.value in ('short_text','email','phone','address') %}
+          <input type="text" name="q{{ q.id }}" value="{{ given[0] if given else '' }}"
+                 {{ 'required' if q.required }}>
+        {% elif q.qtype.value == 'long_text' %}
+          <textarea name="q{{ q.id }}" {{ 'required' if q.required }}>{{ given[0] if given else '' }}</textarea>
+        {% elif q.qtype.value == 'date' %}
+          <input type="date" name="q{{ q.id }}" value="{{ given[0] if given else '' }}"
+                 {{ 'required' if q.required }}>
+        {% elif q.qtype.value == 'number' %}
+          <input type="text" inputmode="numeric" name="q{{ q.id }}"
+                 value="{{ given[0] if given else '' }}" {{ 'required' if q.required }}>
+        {% elif q.qtype.value == 'dropdown' %}
+          <select name="q{{ q.id }}" {{ 'required' if q.required }}>
+            <option value="">- select -</option>
+            {% for o in q.options %}
+            <option {{ 'selected' if o in given }}>{{ o }}</option>{% endfor %}
+          </select>
+        {% elif q.qtype.value in ('radio','yes_no') %}
+          <div class="pt-opts">
+            {% for o in (q.options or ['Yes','No']) %}
+            <label><input type="radio" name="q{{ q.id }}" value="{{ o }}"
+                   {{ 'checked' if o in given }} {{ 'required' if q.required }}> {{ o }}</label>
+            {% endfor %}
+          </div>
+        {% elif q.qtype.value == 'checkbox' %}
+          <div class="pt-opts">
+            {% for o in q.options %}
+            <label><input type="checkbox" name="q{{ q.id }}" value="{{ o }}"
+                   {{ 'checked' if o in given }}> {{ o }}</label>
+            {% endfor %}
+          </div>
+        {% elif q.qtype.value == 'mixed_controls' %}
+          {# One question, many labelled fields - name, DOB, address and so on.
+
+             Where the labels are a table flattened to "Row - Column"
+             ("Smoking - How often?"), the row name is pulled out as a heading and
+             its columns sit together underneath. Without this the fields simply
+             flow into a grid and a row's three questions get split across two
+             lines with the next substance's - which is how somebody ends up
+             answering "Since when?" for the wrong drug. #}
+          {% set groups = [] %}
+          {% for it in q.items %}
+            {% set head = it.label.split(' - ')[0] if ' - ' in it.label else '' %}
+            {% if groups and groups[-1][0] == head %}
+              {% set _ = groups[-1][1].append(it) %}
+            {% else %}
+              {% set _ = groups.append((head, [it])) %}
+            {% endif %}
+          {% endfor %}
+          {% set grouped = groups | selectattr('0') | list | length > 1 %}
+
+          {% for head, items in groups %}
+          {% if grouped and head %}
+          <div class="mx-group">
+            <div class="mx-group-hd">{{ head }}</div>
+          {% endif %}
+          <div class="mixed">
+            {% for it in items %}
+            {% set was = rated.get(it.label, '') %}
+            <div class="mx {{ 'wide' if it.width == 2 }}">
+              <label class="mx-lbl">{{ it.label.split(' - ')[1:] | join(' - ') if (grouped and head) else it.label }}
+                {%- if it.required %} <span class="req">*</span>{% endif %}</label>
+              {% if it.kind.value == 'list' %}
+                <select name="i{{ it.id }}" {{ 'required' if it.required }}>
+                  <option value="">- select -</option>
+                  {% for o in it.options %}
+                  <option {{ 'selected' if o == was }}>{{ o }}</option>
+                  {% endfor %}
+                </select>
+              {% elif it.kind.value == 'date' %}
+                <input type="date" name="i{{ it.id }}" value="{{ was }}"
+                       {{ 'required' if it.required }}>
+              {% else %}
+                <input type="text" name="i{{ it.id }}" value="{{ was }}"
+                       {{ 'required' if it.required }}
+                       {% if 'since' in it.label|lower %}placeholder="e.g. Mar 2024"{% endif %}>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% if grouped and head %}</div>{% endif %}
+          {% endfor %}
+
+        {% elif q.qtype.value == 'file_upload' %}
+          <input type="file" name="q{{ q.id }}" accept="image/*,.pdf">
+          <div class="hint" style="margin-top:6px">Uploads are not stored yet.</div>
+
+        {% elif q.qtype.value == 'attestation' %}
+          <label class="pt-opts" style="flex-direction:row;gap:9px;align-items:center">
+            <input type="checkbox" name="q{{ q.id }}" value="agreed"
+                   {{ 'checked' if given }} {{ 'required' if q.required }}>
+            I agree</label>
+
+        {% elif q.qtype.value == 'matrix' %}
+          <div style="overflow-x:auto">
+          <table class="matrix">
+            <tr>
+              <th></th>
+              {% for o in q.options %}<th>{{ o }}</th>{% endfor %}
+            </tr>
+            {% for row in q.rows %}
+            {% set ri = loop.index0 %}
+            <tr>
+              <td>{{ row }}{% if q.required %} <span class="req">*</span>{% endif %}</td>
+              {% for o in q.options %}
+              <td><input type="radio" name="q{{ q.id }}__{{ ri }}" value="{{ o }}"
+                     {{ 'checked' if rated.get(row) == o }}
+                     {{ 'required' if q.required }}></td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </table>
+          </div>
+        {% elif q.qtype.value == 'signature' %}
+          <input type="text" name="q{{ q.id }}" placeholder="Type your full name to sign"
+                 value="{{ given[0] if given else '' }}" {{ 'required' if q.required }}>
+        {% else %}
+          <input type="text" name="q{{ q.id }}" value="{{ given[0] if given else '' }}">
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% if page == total and consents %}
+      <div style="border-top:1px solid var(--rule);margin-top:34px;padding-top:26px">
+        <h3 style="margin:0 0 12px;font-size:17px">Consent forms</h3>
+        <p class="hint" style="margin-bottom:14px">
+          Please read the following
+          {{ consents|length }} document{{ 's' if consents|length != 1 }}.
+          By typing your name at the bottom you are signing
+          {{ 'them all' if consents|length != 1 else 'it' }}.</p>
+
+        {#  The full wording, not a list of titles. A signature is evidence of
+            what somebody agreed to, and it is only that if they were shown the
+            words. Each document scrolls in its own box so a long one cannot
+            bury the signature field below three screens of text.  #}
+        {% for c in consents %}
+        <div style="border:1px solid var(--rule);border-radius:8px;
+                    margin-bottom:14px;overflow:hidden">
+          <div style="background:#f6f8f8;padding:10px 14px;
+                      border-bottom:1px solid var(--rule);font-weight:600;
+                      font-size:14.5px">{{ c.name }}</div>
+          <div style="max-height:320px;overflow-y:auto;padding:14px 16px;
+                      font-size:14px;line-height:1.65;white-space:pre-wrap">{{ c.body }}</div>
+        </div>
+        {% endfor %}
+        <label class="q">Type your full name to sign <span class="req">*</span></label>
+        <input type="text" name="_signature" required style="max-width:380px">
+      </div>
+      {% endif %}
+
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  gap:12px;margin-top:34px">
+        {% if preview %}
+          {# Links, not buttons: nothing is saved in preview, so there is nothing
+             to post - and a POST to "#" silently drops the page number. #}
+          {% if page > 1 %}
+          <a class="btn" href="/preview/{{ form.id }}?page={{ page - 1 }}">&larr; Back</a>
+          {% else %}
+          <a class="btn" href="/preview/{{ form.id }}?page=0">&larr; Start page</a>
+          {% endif %}
+
+          {% if page < total %}
+          <a class="btn btn-green" style="padding:11px 26px"
+             href="/preview/{{ form.id }}?page={{ page + 1 }}">Next &rarr;</a>
+          {% else %}
+          <a class="btn" href="/forms/{{ form.id }}">Done &mdash; back to editor</a>
+          {% endif %}
+        {% else %}
+          {# Back on every page including the first, which returns to the intro.
+             A form you can only move forward through feels like a trap. #}
+          <button class="btn" name="_go" value="back" formaction="/f/{{ sub.token }}/save"
+                  formnovalidate>&larr; Back</button>
+
+          {% if page < total %}
+          <button class="btn btn-green" name="_go" value="next" style="padding:11px 26px">
+            Next &rarr;</button>
+          {% else %}
+          <button class="btn btn-green" style="padding:11px 30px">Submit</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </form>
+  {% endif %}
+</div>
+
+<div class="pt-foot">
+  {% if preview %}
+  <a href="/forms/{{ form.id }}">&larr; Leave preview</a>
+  <a href="/">Dashboard</a>
+  {% else %}
+  <span>&#9211; Your answers are saved as you go</span>
+  <span>Options &#9652;</span>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Choose Specialty{% endblock %}
+{% block chrome %}<a class="page-back" href="/forms/new">&larr; My Forms</a>{% endblock %}
+{% block full %}
+<div class="centre">
+  <h1>Choose Specialty</h1>
+  <p class="sub">Please confirm your specialty to personalise the form content</p>
+
+  <form method="get" action="/forms/new/guided/type">
+    <select class="specialty-select" name="specialty" required>
+      <option value="">Select a specialty</option>
+      {% for s in specialties %}
+      <option value="{{ s }}" {{ 'selected' if s == 'Psychiatry' }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button class="pill-btn" type="submit">Continue &rarr;</button>
+  </form>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

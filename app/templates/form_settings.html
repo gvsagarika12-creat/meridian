@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Form settings{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/forms">My Forms</a>
+<span class="sep">&rsaquo;</span><a href="/forms/{{ form.id }}">{{ form.name }}</a>
+<span class="sep">&rsaquo;</span>Settings</div>{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width:600px">
+  <h2>&#9881; Settings</h2>
+  <div class="body">
+    <form method="post" action="/forms/{{ form.id }}/settings" style="display:grid;gap:15px">
+      <label>Form name
+        <input type="text" name="name" value="{{ form.name }}" required
+          style="width:100%;padding:10px;border:1px solid #ccd4da;border-radius:3px">
+      </label>
+
+      <label>Card colour
+        <select name="colour" style="padding:9px;border:1px solid #ccd4da;border-radius:3px">
+          {% for value, label in colours %}
+          <option value="{{ value }}" {{ 'selected' if form.colour == value }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:9px">
+        <input type="checkbox" name="active" value="1" {{ 'checked' if form.is_active }}>
+        Active <span class="hint">(inactive forms cannot be sent)</span>
+      </label>
+
+      <table style="width:auto;font-size:14px;margin-top:6px">
+        <tr><th style="padding-right:22px">Version</th><td>{{ form.version }}</td></tr>
+        <tr><th>Questions</th><td>{{ form.questions|length }}</td></tr>
+        <tr><th>Pages</th><td>{{ form.page_count }}</td></tr>
+        <tr><th>Consents attached</th><td>{{ form.consents|length }}</td></tr>
+        <tr><th>Created</th><td>{{ form.created_at|ago }}</td></tr>
+      </table>
+
+      <div>
+        <button class="btn btn-green">Save settings</button>
+        <a class="btn" href="/forms/{{ form.id }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Upload a Form{% endblock %}
+{% block chrome %}<a class="page-back" href="/forms/new">&larr; Create New Questionnaire</a>{% endblock %}
+{% block full %}
+<div class="centre">
+  <h1>Upload a Form</h1>
+  <p class="sub">Upload a PDF or Word document to quickly create a form</p>
+
+  <div style="max-width:640px;margin:0 auto;text-align:left">
+    <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+                padding:16px 20px;font-size:15px">
+      <b>Not built yet.</b>
+      <p style="margin:8px 0 0">Pulling questions out of a PDF or Word file needs
+        document parsing that is not in this build. Two ways to get existing forms
+        in today:</p>
+      <ul style="margin:10px 0 0 18px;padding:0">
+        <li><b>Create Manually</b> and type the questions in.</li>
+        <li>Run <code>prescreening/harvest_forms.py</code> once the form provider's API key is
+          available &mdash; it reconstructs your existing forms from submissions
+          already received.</li>
+      </ul>
+    </div>
+    <p style="margin-top:26px;text-align:center">
+      <a class="btn" href="/forms/new">&larr; Choose another way</a>
+      <a class="btn btn-primary" href="/forms/new/blank">Create manually instead</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+{% block title %}{{ first.name or 'Patient' }} &middot; {{ patient_id }}{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/archive">Hospital Archive</a>
+  <span class="sep">&rsaquo;</span>{{ first.name or patient_id }}
+  <div class="actions">
+    {% if client %}<a class="btn" href="/clients/{{ client.id }}">Practice chart</a>{% endif %}
+    <a class="btn" href="/archive">Back to archive</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+{# ── the patient band, the way the hospital system prints it ─────────────── #}
+<div class="rec-head">
+  <span class="rec-ini">{{ (first.name or '?')[:1] }}</span>
+  <div class="rec-id">
+    <h1>{{ first.name or 'Name not recorded' }}</h1>
+    <div class="hint">
+      {% if first.dob %}<b>DOB:</b> {{ first.dob.strftime('%d %b %Y') }}
+        {%- if first.age %} ({{ first.age }} yo){% endif %} &nbsp;&middot;&nbsp;{% endif %}
+      {% if first.gender %}<b>Sex:</b> {{ first.gender }} &nbsp;&middot;&nbsp;{% endif %}
+      <b>Patient no.</b> {{ patient_id }}
+    </div>
+    <div class="hint" style="margin-top:3px">
+      {% if client %}
+        Linked to <a href="/clients/{{ client.id }}">{{ client.name }}</a>
+        (RD-{{ '%04d' % client.id }}) at this practice
+      {% else %}
+        <span style="color:var(--warn)">Not linked to a patient here</span>
+        &mdash; the clinical sections below have no source until somebody links them
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="rec-allergy {{ 'has' if client and client.allergies }}">
+    <div class="lbl">ALLERGIES</div>
+    {% if client and client.allergies %}
+      {% for a in client.allergies %}
+      <div><b>{{ a.substance }}</b>{{ ' — ' ~ a.reaction if a.reaction }}</div>
+      {% endfor %}
+    {% else %}
+      <div>No allergy history has been documented for this patient.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:11px 14px;margin:14px 0;font-size:14px">{{ note }}</div>
+{% endif %}
+
+<div class="rec-layout">
+
+  {# ── section list, in the hospital system's own order ──────────────────── #}
+  <nav class="rec-nav">
+    {% for key, label in sections %}
+    <a href="/archive/{{ patient_id }}/{{ key }}"
+       class="{{ 'on' if section == key }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="rec-body">
+
+  {# ───────────────────────────────────────────────────────── FACESHEET ── #}
+  {% if section == 'facesheet' %}
+  <h2 class="sec">Facesheet</h2>
+  <div class="fs-grid">
+
+    <div class="fs-card">
+      <h3>Medications</h3>
+      {% if client and client.active_medications %}
+        {% for m in client.active_medications %}
+        <div class="fs-line">{{ m.name }}{{ ' ' ~ m.dose if m.dose }}{{ ' ' ~ m.form if m.form }}
+          {%- if m.prescribed_on %} (Prescribed on {{ m.prescribed_on.strftime('%d %b %Y') }})
+          {%- endif %}</div>
+        {% endfor %}
+        <div class="fs-count">{{ client.active_medications|length }} active medication{{
+          's' if client.active_medications|length != 1 }}</div>
+      {% else %}
+        <p class="none">No medications have been documented for this patient.</p>
+      {% endif %}
+    </div>
+
+    <div class="fs-card">
+      <h3>Problems</h3>
+      {% if client and client.active_problems %}
+        {% for p in client.active_problems %}
+        <div class="fs-line">{{ p.description }}</div>
+        {% endfor %}
+      {% else %}
+        <p class="none">No problems have been documented for this patient.</p>
+      {% endif %}
+    </div>
+
+    <div class="fs-card">
+      <h3>Vitals</h3>
+      {% if client and client.vitals %}
+        {% set v = client.vitals[0] %}
+        <div class="fs-line">
+          {%- if v.bp %}<b>BP</b> {{ v.bp }}&nbsp;&nbsp;{% endif %}
+          {%- if v.hr %}<b>HR</b> {{ v.hr }}&nbsp;&nbsp;{% endif %}
+          {%- if v.temp %}<b>Temp</b> {{ v.temp }}&nbsp;&nbsp;{% endif %}
+          {%- if v.weight %}<b>Wt</b> {{ v.weight }}{% endif %}</div>
+        <div class="fs-count">recorded
+          {{ v.taken_on.strftime('%d %b %Y') if v.taken_on else '—' }}</div>
+      {% else %}
+        <p class="none">No vitals have been documented for this patient.</p>
+      {% endif %}
+    </div>
+
+    <div class="fs-card">
+      <h3>History</h3>
+      <div class="fs-line"><b>Hospital visits:</b> {{ visits|length }}</div>
+      {% for v in visits[:4] %}
+      <div class="fs-line">{{ v.condition }}{{ ' — ' ~ v.procedure if v.procedure }}</div>
+      {% endfor %}
+      {% if visits|length > 4 %}
+      <div class="fs-count"><a href="/archive/{{ patient_id }}/history">
+        and {{ visits|length - 4 }} more</a></div>{% endif %}
+    </div>
+
+  </div>
+
+  {# ─────────────────────────────────────────────────────────── HISTORY ── #}
+  {% elif section == 'history' %}
+  <h2 class="sec">History</h2>
+  <table class="rec-tbl">
+    <thead><tr><th>Detail</th><th style="width:170px">Last Updated</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>
+          <div class="h-head">Hospitalizations / Procedures</div>
+          {% for v in visits %}
+          <div class="h-row">
+            <b>{{ v.condition }}</b>{{ ' — ' ~ v.procedure if v.procedure }}
+            <div class="hint">
+              {%- if v.outcome %}Outcome: {{ v.outcome }}{% endif %}
+              {%- if v.length_of_stay %} &middot; stay {{ v.length_of_stay }} days{% endif %}
+              {%- if v.readmission %} &middot; readmission{% endif %}
+              {%- if v.entered_here %} &middot; recorded at the practice{% endif %}</div>
+          </div>
+          {% else %}
+          <p class="none">No hospitalizations / procedures have been documented
+             for this patient</p>
+          {% endfor %}
+        </td>
+        <td class="hint">from the hospital archive</td>
+      </tr>
+      <tr>
+        <td>
+          <div class="h-head">Social History (SHx)</div>
+          {% if client and client.notes %}
+            {% for n in client.notes if n.kind == 'Social history' %}
+            <div class="h-row">{{ n.body }}</div>
+            {% else %}
+            <p class="none">No social history has been documented for this patient</p>
+            {% endfor %}
+          {% else %}
+          <p class="none">No social history has been documented for this patient</p>
+          {% endif %}
+        </td>
+        <td class="hint">&mdash;</td>
+      </tr>
+      <tr>
+        <td>
+          <div class="h-head">OB &amp; Pregnancy History</div>
+          <p class="none">No Ob or Preg history has been documented for this patient</p>
+        </td>
+        <td class="hint">&mdash;</td>
+      </tr>
+      <tr>
+        <td>
+          <div class="h-head">Long Term Care Facility</div>
+          <p class="none">No Long Term Care Facilities have been documented for
+             this patient</p>
+        </td>
+        <td class="hint">&mdash;</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {# ────────────────────────────────────────────────────────── PROBLEMS ── #}
+  {% elif section == 'problems' %}
+  <h2 class="sec">Problems</h2>
+  {% if client %}
+  <table class="rec-tbl">
+    <thead><tr><th>Problem/Issue</th><th>ICD-10</th><th>Type</th>
+               <th>Start Date</th><th>Last Edited</th></tr></thead>
+    <tbody>
+      {% for p in client.problems %}
+      <tr>
+        <td><b>{{ p.description }}</b></td>
+        <td>{{ p.icd10 or '—' }}</td>
+        <td>{{ 'Active' if p.is_active else 'Inactive' }}</td>
+        <td>{{ p.onset.strftime('%d %b %Y') if p.onset else '—' }}</td>
+        <td class="hint">{{ p.recorded_at.strftime('%d %b %Y') if p.recorded_at else '—' }}
+          <div>{{ p.source }}</div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5"><p class="none">No problems have been documented for
+          this patient</p></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">This archive number is not linked to a patient here, so there is nothing clinical to show. Link them from the patient’s chart and this section fills in.</p>{% endif %}
+
+  {# ─────────────────────────────────────────────────────── MEDICATIONS ── #}
+  {% elif section == 'medications' %}
+  <h2 class="sec">Medications</h2>
+  {% if client %}
+  <table class="rec-tbl">
+    <thead><tr><th>Medication</th><th>Dose</th><th>Form</th><th>Prescribed</th>
+               <th>Stopped</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for m in client.medications %}
+      <tr>
+        <td><b>{{ m.name }}</b>{% if m.prescriber %}
+            <div class="hint">{{ m.prescriber }}</div>{% endif %}</td>
+        <td>{{ m.dose or '—' }}</td>
+        <td>{{ m.form or '—' }}</td>
+        <td>{{ m.prescribed_on.strftime('%d %b %Y') if m.prescribed_on else '—' }}</td>
+        <td>{{ m.stopped_on.strftime('%d %b %Y') if m.stopped_on else '—' }}</td>
+        <td>{% if m.is_active %}<span class="pill on">active</span>
+            {% else %}<span class="pill off">inactive</span>{% endif %}
+          <div class="hint">{{ m.source }}</div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6"><p class="none">No medications have been documented for
+          this patient</p></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">This archive number is not linked to a patient here, so there is nothing clinical to show. Link them from the patient’s chart and this section fills in.</p>{% endif %}
+
+  {# ──────────────────────────────────────────────────── IMMUNIZATIONS ── #}
+  {% elif section == 'immunizations' %}
+  <h2 class="sec">Immunizations</h2>
+  <table class="rec-tbl">
+    <thead><tr><th>Name</th><th style="width:220px">Administered</th></tr></thead>
+    <tbody>
+      {% set given = {} %}
+      {% for i in immunisations %}{% set _ = given.update({i.name: i}) %}{% endfor %}
+      {% for name in default_vaccines %}
+      <tr>
+        <td>{{ name }}</td>
+        <td>{% if given.get(name) and given[name].administered %}
+              {{ given[name].administered.strftime('%d %b %Y') }}
+            {% else %}<span class="hint">no record</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% for i in immunisations if i.name not in default_vaccines %}
+      <tr><td>{{ i.name }}</td>
+        <td>{{ i.administered.strftime('%d %b %Y') if i.administered
+               else '<span class="hint">no record</span>' | safe }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" style="margin-top:12px;max-width:640px">
+    A blank date means <b>no record here</b>, not that the vaccine was never
+    given &mdash; a patient may have been immunised elsewhere. The two are
+    different clinical statements and this screen does not merge them.</p>
+
+  {# ───────────────────────────────────────────────────────── ALLERGIES ── #}
+  {% elif section == 'allergies' %}
+  <h2 class="sec">Allergies</h2>
+  {% if client and client.allergies %}
+  <table class="rec-tbl">
+    <thead><tr><th>Substance</th><th>Reaction</th><th>Severity</th>
+               <th>Recorded</th></tr></thead>
+    <tbody>
+      {% for a in client.allergies %}
+      <tr><td><b>{{ a.substance }}</b></td><td>{{ a.reaction or '—' }}</td>
+          <td>{{ a.severity or '—' }}</td>
+          <td class="hint">{{ a.recorded_at.strftime('%d %b %Y')
+                              if a.recorded_at else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="none">No allergy history has been documented for this patient.</p>
+  {% endif %}
+
+  {# ──────────────────────────────────────────────────────────── VITALS ── #}
+  {% elif section == 'vitals' %}
+  <h2 class="sec">Vitals</h2>
+  {% if client and client.vitals %}
+  <div class="scroll" style="overflow-x:auto">
+  <table class="rec-tbl">
+    <thead><tr><th>Recorded</th><th>BP</th><th>HR</th><th>Temp</th>
+               <th>Height</th><th>Weight</th><th>BMI</th><th>SpO2</th></tr></thead>
+    <tbody>
+      {% for v in client.vitals %}
+      <tr>
+        <td>{{ v.taken_on.strftime('%d %b %Y') if v.taken_on else '—' }}</td>
+        <td>{{ v.bp or '—' }}</td><td>{{ v.hr or '—' }}</td>
+        <td>{{ v.temp or '—' }}</td><td>{{ v.height or '—' }}</td>
+        <td>{{ v.weight or '—' }}</td><td>{{ v.bmi or '—' }}</td>
+        <td>{{ v.spo2 or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="none">No vitals have been documented for this patient.</p>
+  {% endif %}
+
+  {# ───────────────────────────────────────────────────────────── NOTES ── #}
+  {% elif section == 'notes' %}
+  <h2 class="sec">Notes</h2>
+  {% if client and client.notes %}
+    {% for n in client.notes %}
+    <div class="note">
+      <div class="note-head"><b>{{ n.kind or 'Note' }}</b>
+        <span class="hint">{{ n.recorded_at.strftime('%d %b %Y %H:%M')
+                              if n.recorded_at else '' }}</span></div>
+      <div>{{ n.body }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <p class="none">No notes have been documented for this patient.</p>
+  {% endif %}
+
+  {# ───────────────────────────────────────────────────────────── LABS ── #}
+  {% elif section == 'labs' %}
+  <h2 class="sec">Labs / Studies</h2>
+  {% if client and client.labs %}
+  <table class="rec-tbl">
+    <thead><tr><th>Test</th><th>Ordered</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for l in client.labs %}
+      <tr><td><b>{{ l.name }}</b></td>
+          <td>{{ l.ordered_on.strftime('%d %b %Y') if l.ordered_on else '—' }}</td>
+          <td>{{ l.status or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="none">No labs or studies have been documented for this patient.</p>
+  {% endif %}
+
+  {# ─────────────────────────────────────────────────── DEMOGRAPHICS ── #}
+  {% elif section == 'demographics' %}
+  <h2 class="sec">Demographics</h2>
+  <table class="rec-tbl">
+    <tbody>
+      <tr><th style="width:230px">Name</th><td>{{ first.name or '—' }}</td></tr>
+      <tr><th>Date of birth</th>
+          <td>{{ first.dob.strftime('%d %b %Y') if first.dob else '—' }}</td></tr>
+      <tr><th>Age</th><td>{{ first.age or '—' }}</td></tr>
+      <tr><th>Sex</th><td>{{ first.gender or '—' }}</td></tr>
+      <tr><th>Hospital patient number</th><td>{{ patient_id }}</td></tr>
+      <tr><th>Source of this record</th><td>{{ first.source }}</td></tr>
+      {% if client %}
+      <tr><th>Practice record</th>
+          <td><a href="/clients/{{ client.id }}">{{ client.name }}</a>
+              (RD-{{ '%04d' % client.id }})</td></tr>
+      <tr><th>Email</th><td>{{ client.email or '—' }}</td></tr>
+      <tr><th>Phone</th><td>{{ client.phone or '—' }}</td></tr>
+      <tr><th>Assigned to</th>
+          <td>{{ client.provider.name if client.provider else 'Unassigned' }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  </div>
+</div>
+
+<style>
+  .rec-head{display:flex;gap:18px;align-items:flex-start;background:var(--surface);
+    border:1px solid var(--rule);border-radius:10px;padding:16px 18px;flex-wrap:wrap}
+  .rec-ini{flex:none;width:54px;height:54px;border-radius:50%;background:var(--accent-soft);
+    color:var(--accent-dark);font-weight:700;font-size:22px;display:flex;
+    align-items:center;justify-content:center}
+  .rec-id{flex:1;min-width:240px}
+  .rec-id h1{margin:0 0 4px;font-size:21px;font-weight:600}
+  .rec-allergy{flex:none;max-width:330px;border:1px solid var(--rule);border-radius:8px;
+    padding:9px 12px;font-size:13.5px;background:#fbfcfc}
+  .rec-allergy.has{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+  .rec-allergy .lbl{font-size:10.5px;font-weight:700;letter-spacing:.6px;
+    color:var(--ink-3);margin-bottom:4px}
+  .rec-allergy.has .lbl{color:var(--bad)}
+
+  .rec-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;
+    align-items:start;margin-top:18px}
+  @media (max-width:860px){.rec-layout{grid-template-columns:1fr}}
+
+  .rec-nav{display:flex;flex-direction:column;background:var(--surface);
+    border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+  .rec-nav a{padding:10px 15px;font-size:14.5px;color:var(--ink-2);text-decoration:none;
+    border-bottom:1px solid var(--rule)}
+  .rec-nav a:last-child{border-bottom:0}
+  .rec-nav a:hover{background:#f6f8f8}
+  .rec-nav a.on{background:var(--accent-soft);color:var(--accent-dark);font-weight:600;
+    box-shadow:inset 3px 0 0 var(--accent)}
+
+  .rec-body{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+    padding:18px 20px 22px}
+  h2.sec{margin:0 0 16px;font-size:20px;font-weight:600;color:var(--accent-dark)}
+
+  .fs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+  .fs-card{border:1px solid var(--rule);border-radius:9px;padding:13px 15px}
+  .fs-card h3{margin:0 0 9px;font-size:16px;font-weight:600;color:var(--accent-dark)}
+  .fs-line{font-size:14px;padding:3px 0;line-height:1.45}
+  .fs-count{margin-top:8px;font-size:12.5px;color:var(--ink-3);text-align:center}
+
+  table.rec-tbl{width:100%;border-collapse:collapse;font-size:14px}
+  table.rec-tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.6px;color:var(--ink-3);font-weight:600;padding:8px 10px;
+    border-bottom:1px solid var(--rule);background:#f6f8f8}
+  table.rec-tbl td{padding:9px 10px;border-bottom:1px solid var(--rule);
+    vertical-align:top}
+  table.rec-tbl tbody tr:last-child td{border-bottom:0}
+
+  .h-head{font-weight:600;color:var(--accent-dark);margin:2px 0 7px;font-size:15px}
+  .h-row{padding:5px 0}
+  .none{color:var(--ink-3);font-size:14px;margin:4px 0}
+  .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:9px;
+    text-transform:uppercase;letter-spacing:.4px}
+  .pill.on{background:var(--good-soft);color:var(--good)}
+  .pill.off{background:#eef1f3;color:var(--ink-3)}
+  .note{border:1px solid var(--rule);border-radius:8px;padding:11px 13px;
+    margin-bottom:10px;font-size:14px}
+  .note-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px}
+</style>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

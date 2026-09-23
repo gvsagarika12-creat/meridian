@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Submissions{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a><span class="sep">&rsaquo;</span>Client Forms</div>{% endblock %}
+{% block content %}
+<div class="panel"><h2>&#128203; Client Forms</h2><div class="body">
+<table><tr><th>Client</th><th>Form</th><th>Status</th><th>Answers</th><th>Sent</th><th>Submitted</th><th></th></tr>
+{% for s in rows %}<tr><td>{{ s.client.name if s.client else '-' }}</td><td>{{ s.form.name }}</td>
+<td>{% if s.status.value == 'submitted' %}<span class="pill">Unread</span>{% else %}{{ s.status.value }}{% endif %}</td>
+<td>{% if s.answers %}{{ s.answers|length }}{% else %}<span class="hint">none</span>{% endif %}</td>
+<td>{{ s.sent_at|ago }}</td><td>{{ s.submitted_at|ago if s.submitted_at else '-' }}</td>
+<td style="white-space:nowrap">
+  <a class="btn btn-sm btn-primary" href="/submissions/{{ s.id }}">View answers</a>
+  {% if s.is_open %}<a class="btn btn-sm" href="/f/{{ s.token }}">Open as patient</a>{% endif %}
+</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

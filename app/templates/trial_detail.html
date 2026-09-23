@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}{{ trial.name }}{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span><a href="/trials">Trials</a>
+<span class="sep">&rsaquo;</span>{{ trial.name }}</div>{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+  <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px">
+    <h1 style="font-size:26px;font-weight:600;margin:0">{{ trial.name }}</h1>
+    {% if trial.nct_id %}<a href="{{ trial.registry_url }}">{{ trial.nct_id }}</a>
+    {% else %}<span class="hint">no registry ID</span>{% endif %}
+    <span class="hint">{{ trial.condition }}{{ ' · ' ~ trial.site if trial.site }}</span>
+  </div>
+
+  {% if trial.notes %}
+  <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+              padding:13px 16px;margin:14px 0 22px;font-size:14.5px;max-width:860px">
+    {{ trial.notes }}
+  </div>
+  {% endif %}
+
+  <!-- ---------------------------------------------------- screening -->
+  <h2 style="font-size:19px;margin:24px 0 10px">Patients screened</h2>
+  <p class="hint" style="margin:0 0 14px">
+    Most promising first. <b>This screens, it does not decide</b> &mdash; eligibility
+    is a clinician's judgement against the full protocol. What it does is turn a
+    long patient list into the few worth reading properly.
+  </p>
+
+  <div class="scroll" style="max-height:52vh;overflow:auto">
+    <table class="records screening">
+      <thead><tr><th class="who">Patient</th><th>Verdict</th><th>Criteria met</th>
+                 <th>What decided it</th></tr></thead>
+      <tbody>
+        {% for client, s in screened %}
+        <tr>
+          <td class="who"><a href="/clients/{{ client.id }}">{{ client.name }}</a></td>
+          <td><span class="verdict {{ s.verdict | lower | replace(' ', '-') }}">
+              {{ s.verdict }}</span></td>
+          <td style="white-space:nowrap;font-variant-numeric:tabular-nums">
+              {{ s.score_text }}</td>
+          <td class="grow">
+            {% for c in s.checks %}
+              {% if c.blocks %}
+              <div><b style="color:#a93a31">&#10007; {{ c.criterion.summary }}</b>
+                <span class="hint">&mdash; {{ c.found }}</span></div>
+              {% endif %}
+            {% endfor %}
+            {% if not s.blocking %}
+              {% for c in s.unknown %}
+              <div><span style="color:#8a5a00">? {{ c.criterion.summary }}</span>
+                <span class="hint">&mdash; {{ c.found }}</span></div>
+              {% endfor %}
+              {% if not s.unknown %}
+              <span style="color:#1e5636">Every criterion checked and met.</span>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="hint">No patients yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ---------------------------------------------------- protocol -->
+  <h2 style="font-size:19px;margin:30px 0 10px">Protocol</h2>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:20px">
+    {% for title, group, colour in [('Inclusion — must all be true', trial.inclusions, '#2a7048'),
+                                    ('Exclusion — any one rules out', trial.exclusions, '#a93a31')] %}
+    <div class="panel">
+      <h2 style="color:{{ colour }}">{{ title }} ({{ group|length }})</h2>
+      <div class="body">
+        {% for c in group %}
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;
+                    border-top:1px solid var(--rule)">
+          <span style="flex:1">{{ c.summary }}
+            {% if c.rule.value == 'manual' %}
+            <span class="src-tag seed">by hand</span>{% endif %}
+            <div class="hint" style="font-size:12.5px">
+              {{ c.rule.value }}{{ ' · ' ~ c.target if c.target }}</div>
+          </span>
+          {% if can(user, P.FORMS_EDIT) %}
+          <form class="inline" method="post"
+                action="/trials/{{ trial.id }}/criteria/{{ c.id }}/delete">
+            <button class="btn btn-sm">Remove</button></form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p class="hint">None.</p>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if can(user, P.FORMS_EDIT) %}
+  <div class="panel" id="add" style="margin-top:22px;max-width:780px">
+    <h2>&#10010; Add a criterion</h2>
+    <div class="body">
+
+      {% if added %}
+      <div style="background:#e5f1ea;border-left:3px solid #2a7048;color:#1e5636;
+                  padding:12px 15px;margin-bottom:16px;font-size:14.5px">
+        <b>Added:</b> {{ added }}
+      </div>
+      {% endif %}
+
+      {% if errors %}
+      <div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+                  padding:12px 15px;margin-bottom:16px;font-size:14.5px">
+        <b>Not added.</b>
+        <ul style="margin:8px 0 0;padding-left:20px">
+          {% for e in errors %}<li style="margin-bottom:4px">{{ e }}</li>{% endfor %}
+        </ul>
+        <p style="margin:9px 0 0">What you typed is still in the form below.</p>
+      </div>
+      {% endif %}
+
+      <form method="post" action="/trials/{{ trial.id }}/criteria"
+            style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+                   gap:12px;align-items:end">
+        <label>Type
+          <select name="kind">
+            <option value="inclusion" {{ 'selected' if draft.get('kind') == 'inclusion' }}>Inclusion — must be true</option>
+            <option value="exclusion" {{ 'selected' if draft.get('kind') == 'exclusion' }}>Exclusion — rules out</option>
+          </select></label>
+        <label>Check
+          <select name="rule">
+            <option value="manual" {{ 'selected' if draft.get('rule') == 'manual' }}>Checked by hand</option>
+            <option value="age_between" {{ 'selected' if draft.get('rule') == 'age_between' }}>Age is between</option>
+            <option value="sex_is" {{ 'selected' if draft.get('rule') == 'sex_is' }}>Sex is</option>
+            <option value="answered" {{ 'selected' if draft.get('rule') == 'answered' }}>Answered the question</option>
+            <option value="answer_includes" {{ 'selected' if draft.get('rule') == 'answer_includes' }}>Answer includes</option>
+            <option value="reported_condition" {{ 'selected' if draft.get('rule') == 'reported_condition' }}>Patient reported condition</option>
+            <option value="archive_condition" {{ 'selected' if draft.get('rule') == 'archive_condition' }}>Archive records condition</option>
+            <option value="has_hospital_record" {{ 'selected' if draft.get('rule') == 'has_hospital_record' }}>Linked to a hospital record</option>
+            <option value="taking_medication" {{ 'selected' if draft.get('rule') == 'taking_medication' }}>Chart lists the medication</option>
+          </select></label>
+        <label>Target<input type="text" name="target" value="{{ draft.get('target', '') }}"
+               placeholder="question::option, or a condition"></label>
+        <label>Min<input type="text" name="min_value" inputmode="numeric" value="{{ draft.get('min_value', '') }}"></label>
+        <label>Max<input type="text" name="max_value" inputmode="numeric" value="{{ draft.get('max_value', '') }}"></label>
+        <label style="grid-column:1 / -1">The protocol's own wording
+          <input type="text" name="text" value="{{ draft.get('text', '') }}"
+                 placeholder="e.g. Adults aged 18 to 65 at screening"></label>
+        <div style="grid-column:1 / -1">
+          <button class="btn btn-green">Add criterion</button></div>
+      </form>
+      <p class="hint" style="margin-top:12px">
+        <b>Target</b> depends on the check. For <code>answer_includes</code> it is
+        a fragment of the question text, then <code>::</code>, then the option
+        &mdash; for example
+        <code>diagnosis of ADHD::Yes from a mental health professional</code>.
+        For a condition check it is the condition name on its own.<br><br>
+        A criterion the app cannot evaluate reports <b>unknown</b>, never met. Use
+        <b>Checked by hand</b> for anything the form does not ask, so the gap is
+        visible on the screening list instead of silently passing.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+<style>
+  .verdict{display:inline-block;padding:2px 9px;border-radius:10px;font-size:12.5px;
+           font-weight:600;white-space:nowrap}
+  .verdict.looks-eligible{background:#e5f1ea;color:#1e5636}
+  .verdict.needs-review  {background:#fdf2dc;color:#8a5a00}
+  .verdict.not-eligible  {background:#f9e6e4;color:#8a2f28}
+  .verdict.no-criteria   {background:#eef1f3;color:#5b6770}
+  .src-tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11.5px;
+           font-weight:600;vertical-align:1px}
+  .src-tag.seed{background:#f3eef7;color:#6b4c86}
+  /* The reasons column is long by nature, so the table scrolls sideways. The
+     patient name must not scroll away with it - a list of verdicts with no
+     names attached is unreadable, which is exactly what happened. Pinning the
+     first column keeps the name beside whatever reason you have scrolled to. */
+  .screening td.grow{min-width:300px;max-width:640px}
+  .screening th.who,.screening td.who{position:sticky;left:0;z-index:2;
+    white-space:nowrap;background:#fff;box-shadow:1px 0 0 var(--rule)}
+  .screening thead th.who{background:var(--rail);z-index:3}
+  .screening tbody tr:nth-child(even) td.who{background:#faf9f7}
+  .panel label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
+  .panel label input,.panel label select{padding:8px 10px;border:1px solid #ccd4da;
+    border-radius:3px;font-family:inherit;font-size:14.5px}
+</style>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

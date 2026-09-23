@@ -1,0 +1,24 @@
+{% extends "patient_base.html" %}
+{% block body %}
+<div class="progress"><i style="width:100%"></i></div>
+<div class="pt-card" style="text-align:center;padding:60px 40px">
+  <div style="font-size:52px;color:#5cb85c;line-height:1">&#10003;</div>
+  <h1 style="font-size:27px;margin:16px 0 10px">
+    {{ 'Already submitted' if already else 'Thank you' }}</h1>
+  {% if already %}
+    <p>This form was submitted on
+       {{ sub.submitted_at.strftime('%d %B %Y at %H:%M') if sub.submitted_at else 'an earlier date' }}.
+       It can no longer be edited.</p>
+    <p class="hint">If you need to change an answer, please contact the practice.</p>
+  {% else %}
+    <p>Your form has been received by {{ practice.name }}.</p>
+    <p class="hint">You can close this window. There is nothing further to do.</p>
+    {% if staff %}
+    <p style="margin-top:26px">
+      <a class="btn btn-primary" href="/submissions/{{ sub.id }}">See what was submitted</a>
+      <a class="btn" href="/records">Records</a>
+    </p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

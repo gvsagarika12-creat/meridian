@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Submission
+<script>
+  function copyLink(btn) {
+    const box = document.getElementById('ptlink');
+    box.select();
+    navigator.clipboard.writeText(box.value).then(() => {
+      const was = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = was; }, 1500);
+    }).catch(() => document.execCommand('copy'));
+  }
+</script>
+{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/submissions">Client Forms</a>
+<span class="sep">&rsaquo;</span>{{ sub.form.name }}</div>{% endblock %}
+{% block content %}
+<div class="panel" style="margin-bottom:20px"><div class="body" style="padding:16px 20px">
+<table style="width:auto">
+<tr><th style="padding-right:26px">Client</th><td>{{ sub.client.name if sub.client else '-' }}</td></tr>
+<tr><th>Form</th><td>{{ sub.form.name }} <span class="hint">(v{{ sub.form_version }})</span></td></tr>
+<tr><th>Status</th><td>{{ sub.status.value }}</td></tr>
+<tr><th>Sent</th><td>{{ sub.sent_at|ago }}</td></tr>
+<tr><th>Submitted</th><td>{{ sub.submitted_at|ago if sub.submitted_at else 'not yet' }}</td></tr>
+{% if sub.token and sub.is_open %}
+<tr><th style="vertical-align:top">Patient link</th><td>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+    <input type="text" id="ptlink" readonly value="{{ base }}/f/{{ sub.token }}"
+           onclick="this.select()"
+           style="flex:1;min-width:320px;padding:8px 10px;border:1px solid #ccd4da;
+                  border-radius:3px;font-family:monospace;font-size:12.5px;background:#f6f9f8">
+    <button class="btn btn-sm" type="button" onclick="copyLink(this)">Copy</button>
+    <a class="btn btn-sm btn-green" href="/f/{{ sub.token }}">Open as patient</a>
+  </div>
+  <span class="hint">Expires {{ sub.expires_at.strftime('%d %b %Y') if sub.expires_at else 'never' }}.
+    Send this to the patient yourself until a mail server is configured.</span>
+</td></tr>
+{% endif %}
+</table></div></div>
+
+<div class="panel"><h2>&#128221; Answers</h2><div class="body">
+<table><tr><th style="width:55%">Question</th><th>Answer</th></tr>
+{% for q in sub.form.questions %}
+<tr><td>{{ q.text }}{% if q.required %} <span class="req">*</span>{% endif %}
+  <div class="meta hint">{{ q.qtype.value }} &middot; page {{ q.page }}</div></td>
+<td>{% set a = answered.get(q.id) %}
+    {% if a and a.mapping and q.qtype.value == 'mixed_controls' %}
+      <table style="width:auto;border-collapse:collapse;font-size:13.5px">
+        {% for item in q.items %}
+        {% if a.mapping.get(item.label) %}
+        <tr>
+          <td style="padding:2px 14px 2px 0;border:0;color:var(--ink-2)">{{ item.label }}</td>
+          <td style="padding:2px 0;border:0;font-weight:600">{{ a.mapping[item.label] }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </table>
+    {% elif a and a.mapping %}
+      {# A clinical scale read as one long line is unreviewable. Keep the grid. #}
+      <table style="width:auto;border-collapse:collapse;font-size:13.5px">
+        {% for row in q.rows %}
+        <tr>
+          <td style="padding:2px 14px 2px 0;border:0">{{ row }}</td>
+          <td style="padding:2px 0;border:0;font-weight:600">
+            {{ a.mapping.get(row) or '<span class="hint">-</span>'|safe }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% elif a and a.values %}{{ a.display }}
+    {% else %}<span class="hint">&mdash; not answered</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div></div>
+
+{% if messages %}
+<div class="panel" style="margin-top:20px"><h2>&#128233; Delivery</h2><div class="body">
+<table><tr><th>When</th><th>Channel</th><th>To</th><th>Status</th><th>Detail</th></tr>
+{% for m in messages %}
+<tr><td>{{ m.at|ago }}</td><td>{{ m.channel }}</td><td>{{ m.recipient or '-' }}</td>
+<td>{% if m.status == 'sent' %}<span style="color:#2a7048;font-weight:600">sent</span>
+      {% elif m.status == 'not sent' %}<span style="color:#8a5c08;font-weight:600">not sent</span>
+{% elif m.status == 'failed' %}<span style="color:#a93a31;font-weight:600">failed</span>
+{% else %}<span class="hint">skipped</span>{% endif %}</td>
+<td class="hint">{{ m.detail }}</td></tr>
+{% endfor %}
+</table>
+{% if sub.is_open and can(user, P.SUBMISSIONS_SEND) %}
+<div style="margin-top:14px;display:flex;gap:8px">
+  <form class="inline" method="post" action="/submissions/{{ sub.id }}/resend">
+    <input type="hidden" name="channel" value="email">
+    <button class="btn btn-sm">Resend by email</button></form>
+  <form class="inline" method="post" action="/submissions/{{ sub.id }}/resend">
+    <input type="hidden" name="channel" value="sms">
+    <button class="btn btn-sm">Resend by SMS</button></form>
+</div>
+{% endif %}
+</div></div>
+{% endif %}
+
+{% if sub.signatures %}
+<div class="panel" style="margin-top:20px"><h2>&#9998; Signature evidence</h2><div class="body">
+<table><tr><th>Document</th><th>Signed by</th><th>When</th><th>From</th><th>Doc hash</th></tr>
+{% for s in sub.signatures %}
+<tr><td>{{ s.consent.name }}</td><td>{{ s.signed_name }}</td>
+<td>{{ s.signed_at.strftime('%d %b %Y %H:%M') }}</td><td>{{ s.ip_address or '-' }}</td>
+<td class="hint" style="font-family:monospace;font-size:12px">{{ s.document_hash[:16] }}&hellip;</td></tr>
+{% endfor %}
+</table>
+<p class="hint" style="margin-top:12px">The hash fixes the exact document wording at the moment of signing.</p>
+</div></div>
+{% endif %}
+{% endblock %}

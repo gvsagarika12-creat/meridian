@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Clients
+<div class="actions"><a class="btn" href="/records">Combined records</a></div></div>{% endblock %}
+
+{% block content %}
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 16px;margin-bottom:20px;font-size:14.5px">
+  {{ note }} &nbsp;<a href="/my-patients">See My Patients &rarr;</a></div>
+{% endif %}
+
+{% if error %}
+<div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+            padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ error }}</div>
+{% endif %}
+
+{% if can(user, P.CLIENTS_EDIT) %}
+<div class="panel" style="margin-bottom:22px">
+  <h2>&#10010; Add a patient</h2>
+  <div class="body">
+    <form method="post" action="/clients/new"
+          style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+                 gap:13px;align-items:end">
+      <label>First name<input type="text" name="first_name" required></label>
+      <label>Last name<input type="text" name="last_name"></label>
+      <label>Date of birth<input type="date" name="dob"></label>
+      <label>Email<input type="email" name="email"></label>
+      <label>Phone<input type="text" name="phone" placeholder="(909) 555-0100"></label>
+      <label>Hospital ID<input type="text" name="hospital_id" inputmode="numeric"
+             placeholder="e.g. 1097"></label>
+
+      <div style="grid-column:1 / -1;display:flex;gap:22px;flex-wrap:wrap;
+                  border-top:1px solid var(--rule);padding-top:13px;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="allow_email" value="1">
+          Consents to email contact</label>
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="allow_sms" value="1">
+          Consents to SMS contact</label>
+        <button class="btn btn-green" style="margin-left:auto">Add patient</button>
+      </div>
+    </form>
+    <p class="hint" style="margin-top:12px">
+      Name, date of birth, contact details &mdash; and the hospital's patient
+      number, which is the one thing that lets their answers be checked against
+      the archive. Everything else &mdash; address, insurance, pharmacy, medical
+      history &mdash; comes back <b>from the patient</b> on the form itself.
+      Asking staff for it here would be guessing, and the patient would be asked
+      again anyway.<br><br>
+      The Hospital ID is optional. Leave it blank and the patient still works
+      normally; they simply have nothing to be compared against.<br><br>
+      Both consent boxes start unticked. A form cannot be sent on a channel the
+      patient has not agreed to.</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>&#128100; Patients ({{ clients|length }})</h2>
+  <div class="body">
+    <div class="scroll" style="overflow-x:auto">
+    <table>
+      <tr><th>Name</th><th>Hospital ID</th><th>DOB</th><th>Contact</th><th>Consent</th>
+          <th>Meds</th><th>Diagnoses</th><th>Forms</th><th>Under</th><th></th></tr>
+      {% for c in clients %}
+      <tr>
+        <td><a href="/clients/{{ c.id }}"><b>{{ c.name }}</b></a>
+          <div class="hint" style="font-size:12px">RD-{{ '%04d' % c.id }}</div></td>
+        <td>{% if c.hospital_id %}{{ c.hospital_id }}{% else %}
+            <span class="hint">not linked</span>{% endif %}</td>
+        <td>{{ c.dob.strftime('%d %b %Y') if c.dob else '—' }}</td>
+        <td>{{ c.email or '—' }}<div class="hint">{{ c.phone }}</div></td>
+        <td>
+          {% if c.allow_email %}<span class="src tebra">email</span> {% endif %}
+          {% if c.allow_sms %}<span class="src intakeq">sms</span>{% endif %}
+          {% if not c.allow_email and not c.allow_sms %}<span class="hint">none</span>{% endif %}
+        </td>
+        <td>{{ c.active_medications|length }}</td>
+        <td>{{ c.active_problems|length }}</td>
+        <td>{{ c.submissions_list|length }}</td>
+
+        {# One button, one click, no dropdown to read. Taking a patient on is the
+           commonest thing anyone does from this list, and the two states it can
+           be in - mine, or somebody's - are different enough that a single
+           control can say which without a label. #}
+        <td style="white-space:nowrap">
+          {% if c.provider_id and user and c.provider_id == user.id %}
+            <span class="src tebra">mine</span>
+          {% elif c.provider %}
+            <span class="hint">{{ c.provider.name }}</span>
+          {% else %}
+            <span class="hint">&mdash;</span>
+          {% endif %}
+        </td>
+
+        <td style="white-space:nowrap">
+          {% if can(user, P.CLIENTS_EDIT) and user %}
+            {% if c.provider_id == user.id %}
+            <form class="inline" method="post" action="/clients/{{ c.id }}/provider">
+              <input type="hidden" name="provider_id" value="">
+              <input type="hidden" name="back" value="/clients">
+              <button class="btn btn-sm" title="Remove them from your list">Release</button>
+            </form>
+            {% else %}
+            <form class="inline" method="post" action="/clients/{{ c.id }}/provider">
+              <input type="hidden" name="provider_id" value="{{ user.id }}">
+              <input type="hidden" name="back" value="/clients">
+              <button class="btn btn-sm btn-green"
+                      title="Put this patient under your name">&#10010; Add to mine</button>
+            </form>
+            {% endif %}
+          {% endif %}
+          <a class="btn btn-sm" href="/clients/{{ c.id }}">Chart</a>
+          {% if can(user, P.SUBMISSIONS_SEND) %}
+          <a class="btn btn-sm" href="/send?client={{ c.id }}">Send form</a>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="hint">No patients yet. Add the first one above.</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .panel label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
+  .panel label input[type=text],.panel label input[type=email],
+  .panel label input[type=date]{padding:8px 10px;border:1px solid #ccd4da;
+    border-radius:3px;font-family:inherit;font-size:14.5px}
+</style>
+{% endblock %}

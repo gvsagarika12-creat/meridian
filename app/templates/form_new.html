@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Create New Questionnaire{% endblock %}
+{% block chrome %}<a class="page-back" href="/forms">&larr; My Forms</a>{% endblock %}
+{% block full %}
+<div class="centre">
+  <h1>Create New Questionnaire</h1>
+  <p class="sub">Start from scratch, use our Form Builder to generate your form,
+     or upload your own Form</p>
+
+  <div class="choice-grid">
+    <a class="choice" href="/forms/new/guided">
+      <span class="ico">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#e8622a"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2.5l1.9 4.7 4.7 1.9-4.7 1.9L12 15.7l-1.9-4.7-4.7-1.9 4.7-1.9z"/>
+          <path d="M18.5 15l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/>
+        </svg>
+      </span>
+      <b>Guided Builder</b>
+      <p>Answer a few questions and we will generate a draft you can edit.</p>
+    </a>
+
+    <a class="choice" href="/forms/new/blank?kind={{ kind }}">
+      <span class="ico">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#e8622a"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M3 9h18M9 9v12"/>
+        </svg>
+      </span>
+      <b>Create Manually</b>
+      <p>Start with a blank form and build it yourself.</p>
+    </a>
+
+    <a class="choice" href="/forms/new/upload">
+      <span class="ico">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#e8622a"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2.5H7a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5z"/>
+          <path d="M14 2.5v5h5"/><path d="M12 17v-6"/><path d="M9.5 13.5L12 11l2.5 2.5"/>
+        </svg>
+      </span>
+      <b>Upload a Form</b>
+      <p>Upload a PDF or Word document to quickly create a form.</p>
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Rules{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/forms">My Forms</a>
+<span class="sep">&rsaquo;</span><a href="/forms/{{ form.id }}">{{ form.name }}</a>
+<span class="sep">&rsaquo;</span>Rules</div>{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width:720px">
+  <h2>&#9889; Rules</h2>
+  <div class="body">
+    <p>Rules show or hide a question depending on an earlier answer &mdash; only asking
+      about pregnancy, for instance, if an earlier question was answered yes.</p>
+
+    <div style="background:#f8efdb;border-left:3px solid #8a5c08;color:#6b4806;
+                padding:14px 18px;margin:18px 0;font-size:14.5px">
+      <b>Not built yet.</b> The data model has a place for conditional logic, but the
+      editor and the evaluator are not written. Every question on a page is currently
+      shown to every patient.
+    </div>
+
+    <p class="hint">This one matters for correctness rather than convenience: a hidden
+      question must never be trusted from the browser, so the rule has to be
+      re-evaluated on the server at submit time. That is the part worth doing carefully.</p>
+
+    <p style="margin-top:20px"><a class="btn" href="/forms/{{ form.id }}">Back to editor</a></p>
+  </div>
+</div>
+{% endblock %}

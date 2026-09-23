@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Trials{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Trials</div>{% endblock %}
+
+{% block content %}
+
+<div class="panel">
+  <h2>&#129514; Studies we are screening for ({{ trials|length }})</h2>
+  <div class="body">
+    <table>
+      <tr><th>Study</th><th>Registry</th><th>Condition</th><th>Site</th>
+          <th>Criteria</th><th>Status</th><th></th></tr>
+      {% for t in trials %}
+      <tr>
+        <td><a href="/trials/{{ t.id }}"><b>{{ t.name }}</b></a></td>
+        <td>
+          {% if t.nct_id %}<a href="{{ t.registry_url }}">{{ t.nct_id }}</a>
+          {% else %}<span class="hint">none</span>{% endif %}
+        </td>
+        <td>{{ t.condition or '—' }}</td>
+        <td>{{ t.site or '—' }}</td>
+        <td>{{ t.inclusions|length }} in &middot; {{ t.exclusions|length }} ex</td>
+        <td>{{ t.status }}</td>
+        <td><a class="btn btn-sm" href="/trials/{{ t.id }}">Screen patients</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="hint">No trials yet.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+{% if can(user, P.FORMS_CREATE) %}
+<div class="panel" style="margin-top:22px;max-width:680px">
+  <h2>&#10010; Add a study</h2>
+  <div class="body">
+    <form method="post" action="/trials/new"
+          style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+                 gap:13px;align-items:end">
+      <label>Study name<input type="text" name="name" required></label>
+      <label>NCT number<input type="text" name="nct_id" placeholder="NCT01234567"></label>
+      <label>Condition<input type="text" name="condition"></label>
+      <label>Site<input type="text" name="site"></label>
+      <div style="grid-column:1 / -1">
+        <button class="btn btn-green">Add study</button>
+      </div>
+    </form>
+    <p class="hint" style="margin-top:12px">
+      A registry ID is <b>NCT followed by eight digits</b>. Anything shorter is a
+      truncated number and will not resolve on clinicaltrials.gov &mdash; worth
+      checking before a protocol is built on it.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .panel label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
+  .panel label input{padding:8px 10px;border:1px solid #ccd4da;border-radius:3px;
+    font-family:inherit;font-size:14.5px}
+</style>
+{% endblock %}

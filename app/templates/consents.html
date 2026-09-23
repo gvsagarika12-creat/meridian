@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Consent documents{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/forms">Forms</a>
+  <span class="sep">&rsaquo;</span>Consent documents</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ note }}</div>
+{% endif %}
+
+{% if empty %}
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+            color:var(--bad);padding:13px 16px;margin:0 0 20px;font-size:14.5px">
+  <b>{{ empty }} of these {{ consents|length }} documents have no wording.</b>
+  <p style="margin:7px 0 0">
+    A document with nothing in it is not shown to patients and cannot be signed
+    &mdash; the app hides it rather than collecting a signature against an empty
+    page. Until somebody writes the text, attaching it to a questionnaire has no
+    effect.</p>
+</div>
+{% endif %}
+
+<p class="hint" style="max-width:780px;margin:0 0 20px">
+  The documents a patient signs at the end of a questionnaire. Each signature
+  stores the signer's name, the time, their address and browser, and a hash of
+  <b>the exact wording as it stood at that moment</b> &mdash; so editing a
+  document here never changes what somebody already signed.
+</p>
+
+<div class="panel" style="margin-bottom:24px">
+  <div class="body" style="padding:0">
+    <table class="consent-tbl">
+      <thead>
+        <tr>
+          <th>Document</th>
+          <th>Wording</th>
+          <th class="num">On&nbsp;forms</th>
+          <th class="num">Signed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in consents %}
+        {% set has_text = (c.body or '').strip()|length > 0 %}
+        <tr>
+          <td><b>{{ c.name }}</b></td>
+          <td>
+            {% if has_text %}
+              <span class="tag ok">{{ '{:,}'.format((c.body or '')|length) }} characters</span>
+            {% else %}
+              <span class="tag bad">empty</span>
+              <span class="hint">hidden from patients</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ used.get(c.id, 0) }}</td>
+          <td class="num">
+            {% if signed.get(c.id, 0) and not has_text %}
+              {#  Signatures against a document with no wording. Worth making
+                  loud: each one hashed an empty page, so they are evidence of
+                  nothing, and they cannot be fixed by writing the text now. #}
+              <span class="tag bad" title="Signed while this document had no
+                    wording - those signatures hashed an empty page">{{ signed[c.id] }}</span>
+            {% else %}{{ signed.get(c.id, 0) }}{% endif %}
+          </td>
+          <td class="act">
+            <a class="btn btn-sm {{ 'btn-green' if not has_text }}"
+               href="/consents/{{ c.id }}">{{ 'Write it' if not has_text else 'Edit' }}</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  /*  Explicit widths, because the document names run from "Locations" to
+      "PROFESSIONAL SERVICE & DOCUMENTATION FEES & DISCLAIMER" and an auto
+      layout gives the longest one half the table and wraps everything else to
+      one word per line.  */
+  .consent-tbl{width:100%;border-collapse:collapse;font-size:14px}
+  .consent-tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.5px;color:var(--ink-3);font-weight:700;padding:11px 14px;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  .consent-tbl td{padding:11px 14px;border-bottom:1px solid var(--rule);
+    vertical-align:middle}
+  .consent-tbl tbody tr:last-child td{border-bottom:0}
+  .consent-tbl tbody tr:hover{background:#f7fafa}
+  .consent-tbl th:first-child,.consent-tbl td:first-child{width:38%}
+  .consent-tbl th:nth-child(2),.consent-tbl td:nth-child(2){width:32%}
+  .consent-tbl .num{width:90px;text-align:right;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .consent-tbl .act{text-align:right;white-space:nowrap;width:110px}
+  .consent-tbl .hint{margin-left:7px;font-size:12.5px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;
+    border-radius:9px;white-space:nowrap;text-transform:uppercase;
+    letter-spacing:.4px}
+  .tag.ok{background:var(--good-soft);color:var(--good)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  @media (max-width:760px){
+    .consent-tbl th:nth-child(2),.consent-tbl td:nth-child(2){display:none}
+  }
+</style>
+
+{% if can(user, P.FORMS_EDIT) %}
+<div class="panel" style="max-width:560px">
+  <h2>&#10010; New consent document</h2>
+  <div class="body">
+    <form method="post" action="/consents/new" class="add-inline">
+      <input type="text" name="name" placeholder="What is it called?" required>
+      <button class="btn btn-sm btn-green">Create</button>
+    </form>
+    <p class="hint" style="margin:10px 0 0">
+      You write the wording on the next screen. It stays hidden from patients
+      until you do.</p>
+  </div>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Form type{% endblock %}
+{% block chrome %}<a class="page-back" href="/forms/new/guided">&larr; My Forms</a>{% endblock %}
+{% block full %}
+<div class="centre">
+  <div class="stepper">
+    <span class="s on"><b>1</b> Form Type</span><span class="bar"></span>
+    <span class="s"><b>2</b> Clinical Focus</span><span class="bar"></span>
+    <span class="s"><b>3</b> Select Form</span>
+  </div>
+
+  <h1>What type of questionnaire are you building?</h1>
+  <p class="sub">Select from the most common questionnaire types for {{ specialty }}</p>
+
+  <form method="post" action="/forms/new/guided/create" id="typeForm">
+    <input type="hidden" name="specialty" value="{{ specialty }}">
+    <input type="hidden" name="kind" id="kind" value="">
+
+    <div class="chips">
+      {% for t in types %}
+      <button type="button" class="chip" onclick="pick(this,'{{ t }}')">{{ t }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="ask">
+      <span class="plus">+</span>
+      <input type="text" name="note" placeholder="Describe the form you need">
+      <button class="go" type="submit" title="Continue">&uarr;</button>
+    </div>
+
+    <div class="wizard-foot">
+      <a class="back" href="/forms/new/guided">Back</a>
+      <button class="pill-btn soft" type="submit" id="go">Continue &rarr;</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function pick(el, value) {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+    el.classList.add('on');
+    document.getElementById('kind').value = value;
+    document.getElementById('go').classList.remove('soft');
+  }
+</script>
+{% endblock %}
+{% block content %}{% endblock %}

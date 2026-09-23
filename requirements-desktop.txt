@@ -1,0 +1,4 @@
+# Running the app as a native window on a staff machine. This is what RUN.bat
+# needs; a server does not, and pywebview will not install on one.
+-r requirements.txt
+pywebview>=5.3

@@ -1,0 +1,8 @@
+# Step one — pulling IntakeQ into Excel needs only these three.
+requests>=2.32
+openpyxl>=3.1
+python-dotenv>=1.0
+
+# Added later, for the Tebra half and the rules engine.
+zeep>=4.2          # Tebra SOAP client
+PyYAML>=6.0        # criteria.yaml and drug_classes.yaml

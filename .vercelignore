@@ -1,0 +1,24 @@
+# Local-only. practice.json is NOT here: it holds the practice name and phone
+# number, which the deployed app needs, and nothing secret.
+# None of this belongs in a serverless build, and some of it must
+# never leave this machine.
+.env
+config/session.key
+data/
+outbox.log
+desktop.log
+desktop.py
+RUN.bat
+RESET-PASSWORD.bat
+admin.py
+migrate_to_postgres.py
+patch_editor.py
+test-email.py
+tidy_submissions.py
+import_hospital_data.py
+install_adhd_form.py
+update_adhd_form.py
+prescreening/
+*.sqlite-backup*
+__pycache__/
+backups/

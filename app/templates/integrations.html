@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Connections{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>Connections</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+{% if saved %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ saved }}</div>
+{% endif %}
+{% if save_error %}
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+            color:var(--bad);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ save_error }}</div>
+{% endif %}
+
+<p class="hint" style="max-width:760px;margin:0 0 22px">
+  The systems this app talks to. <b>Every check below makes a real call</b> &mdash;
+  none of them reports success just because a credential is present, because a
+  key sitting in a setting proves only that somebody typed something.
+</p>
+
+<div class="conns">
+  {% for c in connections %}
+  {% set r = results.get(c.key) %}
+  <div class="panel conn">
+    <h2>
+      {{ c.name }}
+      {% if not c.implemented %}
+        <span class="state todo">not built yet</span>
+      {% elif r and r.ok %}
+        <span class="state ok">connected</span>
+      {% elif r %}
+        <span class="state bad">failed</span>
+      {% elif c.configured(db) %}
+        <span class="state untested">configured, untested</span>
+      {% else %}
+        <span class="state missing">not configured</span>
+      {% endif %}
+    </h2>
+    <div class="body">
+      <p style="margin-top:0">{{ c.purpose }}</p>
+
+      {% if c.note %}
+      <p class="hint" style="background:var(--warn-soft);color:var(--warn);
+                border-left:3px solid var(--warn);padding:9px 12px;margin:0 0 14px">
+        {{ c.note }}</p>
+      {% endif %}
+
+      <form method="post" action="/integrations/{{ c.key }}/save" class="settings">
+        {% for var, what, value, secret, where in c.shown(db) %}
+        <div class="setting">
+          <div class="meta">
+            <code>{{ var }}</code>
+            <span class="hint">{{ what }}</span>
+          </div>
+          <div class="now">
+            <span style="{{ 'color:var(--ink-3)' if value == 'not set' }}">{{ value }}</span>
+            {% if where == 'stored' %}<span class="src stored">saved here</span>
+            {% elif where == 'environment' %}<span class="src env">from the server</span>
+            {% elif where == 'broken' %}<span class="src broken">unreadable</span>
+            {% endif %}
+          </div>
+          {% if can_store and c.editable %}
+          <div class="edit">
+            {#  readonly until focused, and autocomplete="new-password", because a
+                browser will otherwise offer the saved login for THIS site into a
+                password box on THIS page. A password manager filling the staff
+                password into the Tebra field is not a cosmetic problem: the save
+                would look successful, the connection test would fail for a reason
+                that names neither, and the staff password would sit encrypted in
+                the credentials table. autocomplete="off" alone is ignored by every
+                current browser for password inputs.  #}
+            <input type="{{ 'password' if secret else 'text' }}" name="{{ var }}"
+                   autocomplete="new-password" spellcheck="false"
+                   data-lpignore="true" data-1p-ignore data-bwignore
+                   readonly onfocus="this.removeAttribute('readonly')"
+                   placeholder="{{ 'leave blank to keep it' if value != 'not set'
+                                   else 'paste it here' }}">
+            {% if where == 'stored' or where == 'broken' %}
+            <label class="clear" title="Remove the saved value">
+              <input type="checkbox" name="clear__{{ var }}" value="1"> remove
+            </label>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if c.editable and can_store %}
+        <div style="margin:4px 0 14px">
+          <button class="btn btn-sm btn-green">Save credentials</button>
+          <span class="hint" style="margin-left:9px">
+            Saving does not test anything &mdash; press Test connection after.</span>
+        </div>
+        {% elif c.editable %}
+        <p class="hint" style="margin:2px 0 14px">
+          Credentials cannot be typed in on this copy: <code>SESSION_SECRET</code>
+          is not set, and it is what encrypts them.</p>
+        {% else %}
+        <p class="hint" style="margin:2px 0 14px">
+          Set on the server, not here.</p>
+        {% endif %}
+      </form>
+
+      {% if r %}
+      <div class="result {{ 'ok' if r.ok else 'bad' }}">
+        <b>{{ r.summary }}</b>
+        {% if r.detail %}<div style="margin-top:4px">{{ r.detail }}</div>{% endif %}
+        <div class="hint" style="margin-top:5px">checked {{ r.at }} UTC</div>
+      </div>
+      {% endif %}
+
+      {% if can(user, P.USERS_MANAGE) %}
+      <form class="inline" method="post" action="/integrations/{{ c.key }}/test"
+            style="margin-top:12px">
+        <button class="btn btn-sm {{ 'btn-green' if c.implemented }}"
+                {{ 'disabled' if not c.implemented }}>
+          {{ 'Test connection' if c.implemented else 'Nothing to test' }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if can(user, P.INTEGRATIONS_IMPORT) %}
+{#  A run that is still going refreshes the page for itself. The import advances
+    one slice per request because a backfill outlives a web request, and asking
+    an operator to press a button ninety times is not a design.  #}
+{% if run and run.status == 'running' %}
+<meta http-equiv="refresh" content="3">
+{% endif %}
+
+<div class="panel" id="intakeq-import" style="margin-top:24px;max-width:860px">
+  <h2>Import from IntakeQ
+    {% if run %}
+    <span class="state {{ {'running':'untested','done':'ok','paused':'missing',
+                           'failed':'bad'}.get(run.status,'missing') }}">
+      {{ run.status }}</span>
+    {% endif %}
+  </h2>
+  <div class="body">
+    <p style="margin-top:0">
+      Brings across the practice's patient list and the intake forms they have
+      already completed. Demographics land on the patient record; each completed
+      questionnaire is kept as <b>the signed PDF</b> rather than re-typed into
+      this app's own questions &mdash; the document is the thing with legal
+      weight, and rebuilding one from its answers loses exactly that.
+    </p>
+
+    {% if run %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+                gap:14px;border-top:1px solid var(--rule);padding-top:14px;
+                margin-bottom:14px">
+      <div><b style="font-size:21px;font-variant-numeric:tabular-nums">{{ run.clients_new }}</b>
+        <div class="hint">new patients</div></div>
+      <div><b style="font-size:21px;font-variant-numeric:tabular-nums">{{ run.clients_filled }}</b>
+        <div class="hint">patients filled in</div></div>
+      <div><b style="font-size:21px;font-variant-numeric:tabular-nums">{{ run.intakes_new }}</b>
+        <div class="hint">intakes kept</div></div>
+      <div><b style="font-size:21px;font-variant-numeric:tabular-nums">{{ run.quota_left }}</b>
+        <div class="hint">requests left today</div></div>
+    </div>
+
+    <p class="hint" style="margin:0 0 12px">
+      Reading <b>{{ run.stage }}</b>, page {{ run.page }}.
+      {{ run.requests_used }} of {{ day_limit }} requests used today.
+      Started {{ run.started_at.strftime('%d %b %H:%M') }} UTC.
+    </p>
+
+    {% if run.message %}
+    <div class="result {{ 'bad' if run.status == 'failed' else 'ok' }}"
+         style="margin-bottom:12px">{{ run.message }}</div>
+    {% endif %}
+
+    {% if run.failures %}
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-weight:600;font-size:14px">
+        Records that did not import</summary>
+      <pre style="white-space:pre-wrap;font-size:12.5px;color:var(--ink-2);
+                  margin:9px 0 0">{{ run.failures }}</pre>
+    </details>
+    {% endif %}
+    {% endif %}
+
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+      {% if run and run.status == 'running' %}
+      <form class="inline" method="post" action="/integrations/intakeq/import">
+        <input type="hidden" name="mode" value="resume">
+        <button class="btn btn-sm btn-green">Continue now</button></form>
+      <form class="inline" method="post" action="/integrations/intakeq/import/stop">
+        <button class="btn btn-sm">Stop</button></form>
+      <span class="hint">Running &mdash; this page continues by itself.</span>
+      {% else %}
+      {% if run and run.status in ('paused', 'failed') %}
+      <form class="inline" method="post" action="/integrations/intakeq/import">
+        <input type="hidden" name="mode" value="resume">
+        <button class="btn btn-sm btn-green">Resume</button></form>
+      {% endif %}
+      <form class="inline" method="post" action="/integrations/intakeq/import">
+        <input type="hidden" name="mode" value="full">
+        <button class="btn btn-sm">
+          {{ 'Start over' if run else 'Start the import' }}</button></form>
+      {% if run and run.status == 'done' %}
+      <form class="inline" method="post" action="/integrations/intakeq/import">
+        <input type="hidden" name="mode" value="changes">
+        <button class="btn btn-sm">Bring across changes only</button></form>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <p class="hint" style="margin:14px 0 0">
+      IntakeQ allows {{ day_limit }} requests a day. The import stops when that
+      runs out and resumes from the same page &mdash; closing this tab does not
+      lose its place. Patient details already entered here are never overwritten
+      by imported ones, and contact consent is never imported: consent given to
+      IntakeQ was given in IntakeQ's wording.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel" style="margin-top:24px;max-width:860px">
+  <h2>How credentials are stored</h2>
+  <div class="body">
+    <p style="margin-top:0">
+      Every value above is an <b>environment variable</b>, not a row in the
+      database and not a line in the code. On this machine they live in a
+      <code>.env</code> file that is excluded from version control; on the hosted
+      copy they are Vercel environment variables marked secret, which the
+      dashboard will not display back even to the person who set them.
+    </p>
+    <p>
+      Secrets are shown here only as a character count. A screen that prints an
+      API key is a screen that leaks it to whoever is standing behind you.
+    </p>
+    <p class="hint" style="margin-bottom:0">
+      None of these providers may carry patient data until a BAA is signed with
+      them. That is a contract, not a setting, and no green light on this page
+      stands in for it.
+    </p>
+  </div>
+</div>
+
+<style>
+  .conns{display:grid;grid-template-columns:repeat(auto-fit,minmax(390px,1fr));gap:20px;
+    align-items:start}
+  .conn h2{justify-content:space-between}
+  .state{font-size:11px;font-weight:700;padding:2px 9px;border-radius:9px;
+    text-transform:uppercase;letter-spacing:.5px}
+  .state.ok      {background:var(--good-soft);color:var(--good)}
+  .state.bad     {background:var(--bad-soft);color:var(--bad)}
+  .state.untested{background:var(--warn-soft);color:var(--warn)}
+  .state.missing {background:#eef1f3;color:var(--ink-3)}
+  .state.todo    {background:#f3eef7;color:#6b4c86}
+  .result{border-radius:7px;padding:11px 13px;font-size:14px}
+  .result.ok {background:var(--good-soft);color:var(--good)}
+  .result.bad{background:var(--bad-soft);color:var(--bad)}
+  .conn code{background:#f4f3f0;padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .settings{margin-bottom:6px}
+  .setting{padding:9px 0;border-top:1px solid var(--rule)}
+  .setting:first-child{border-top:0}
+  .setting .meta{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+  .setting .now{font-size:13.5px;margin:3px 0 6px;display:flex;gap:8px;
+    align-items:center;flex-wrap:wrap}
+  .setting .edit{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .setting input[type=text],.setting input[type=password]{flex:1;min-width:180px;
+    padding:7px 9px;border:1px solid #ccd4da;border-radius:6px;
+    font-family:inherit;font-size:14px}
+  .setting .clear{font-size:12.5px;color:var(--ink-3);display:flex;gap:5px;
+    align-items:center;white-space:nowrap}
+  .src{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:9px;
+    text-transform:uppercase;letter-spacing:.4px}
+  .src.stored{background:var(--good-soft);color:var(--good)}
+  .src.env{background:#eef1f3;color:var(--ink-3)}
+  .src.broken{background:var(--bad-soft);color:var(--bad)}
+</style>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

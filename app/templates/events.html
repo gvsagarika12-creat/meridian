@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Account Events{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a><span class="sep">&rsaquo;</span>Account Events</div>{% endblock %}
+{% block content %}
+<div class="panel"><h2>&#9889; Account Events</h2><div class="body">
+<table><tr><th>Event</th><th>Entity</th><th>When</th></tr>
+{% for e in rows %}<tr><td><span class="dot d-grey"></span>{{ e.action }}</td>
+<td class="hint">{{ e.entity_type }} {{ e.entity_id }}</td><td>{{ e.at|ago }}</td></tr>{% endfor %}
+</table></div></div>
+<p class="hint" style="margin-top:14px">Append-only audit log. This is the same table a HIPAA auditor would be shown.</p>
+{% endblock %}

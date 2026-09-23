@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Not permitted{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:560px;margin-top:30px">
+  <h2>&#128274; Not permitted</h2>
+  <div class="body" style="padding:20px">
+    <p>Your role (<b>{{ role_label(user.role) if user else 'none' }}</b>) does not include:</p>
+    <p style="background:var(--surface-2);padding:10px 14px;border-radius:3px;
+              font-weight:600">{{ permission }}</p>
+    <p class="hint">If you need this, ask an administrator to change your role.
+       The attempt has been recorded in the audit log.</p>
+    <p style="margin-top:18px"><a class="btn" href="/">&larr; Back to dashboard</a></p>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+intake.db
+*.sqlite-backup*
+__pycache__/
+*.pyc
+.env
+config/practice.json
+config/session.key
+first-run-credentials.txt
+desktop.log
+outbox.log
+
+# The hospital's own archive. Real patient data belongs with the practice, not
+# in a repository - the folder is tracked, its contents are not.
+# Patient data, wherever it sits. The pattern used to be data/*.csv, which
+# missed an identical copy of the archive sitting at the repository root - 984
+# patient records that would have been committed. Anchor-free patterns here on
+# purpose: a spreadsheet of patients is never safe to publish, whatever folder
+# somebody drops it in.
+*.csv
+*.xlsx
+*.dump
+!data/README.md
+
+.vercel
+.env*
+
+# Database dumps. They contain everything, including patient data.
+backups/

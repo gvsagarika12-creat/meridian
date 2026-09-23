@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Staff accounts{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Staff Accounts
+<div class="actions"><a class="btn" href="/permissions">Roles &amp; permissions</a></div></div>{% endblock %}
+
+{% block content %}
+
+{% if flash %}
+<div class="panel" style="border-left:4px solid #2a7048;margin-bottom:20px">
+  <div class="body" style="padding:18px 20px">
+    <b>{{ flash.title }}</b>
+    <p class="hint" style="margin:8px 0 12px">Copy this now &mdash; it is shown once and
+       never again. They must change it at first sign-in.</p>
+    <table style="width:auto">
+      <tr><th style="padding-right:22px">Email</th>
+          <td style="font-family:monospace">{{ flash.email }}</td></tr>
+      <tr><th>Temporary password</th>
+          <td style="font-family:monospace;font-size:16px;font-weight:700">{{ flash.password }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if error %}
+<div style="background:#f9e6e4;border-left:3px solid #a93a31;color:#8a2f28;
+            padding:12px 16px;margin-bottom:20px;font-size:14.5px">{{ error }}</div>
+{% endif %}
+
+{% if awaiting %}
+<div class="panel" style="margin-bottom:20px;border-left:4px solid #8a5c08">
+  <h2>&#9203; Awaiting approval ({{ awaiting|length }})</h2>
+  <div class="body">
+    <p class="hint" style="margin-bottom:12px">These people created their own login.
+      They can sign in but reach nothing until you give them a role.</p>
+    <table>
+      <tr><th>Name</th><th>Email</th><th>Signed up</th><th style="min-width:230px">Give access</th></tr>
+      {% for u in awaiting %}
+      <tr>
+        <td>{{ u.name }}</td><td>{{ u.email }}</td>
+        <td>{{ u.last_login|ago if u.last_login else 'not yet' }}</td>
+        <td style="white-space:nowrap">
+          <form class="inline" method="post" action="/users/{{ u.id }}/role">
+            <select name="role" style="padding:4px;border:1px solid #ccd4da;border-radius:3px">
+              {% for role in roles %}
+              {% if role.value != 'pending' and (role.value != 'owner' or user.role.value == 'owner') %}
+              <option value="{{ role.value }}" {{ 'selected' if role.value == 'front_desk' }}>
+                {{ role_label(role) }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-green">Approve</button>
+          </form>
+          <form class="inline" method="post" action="/users/{{ u.id }}/active">
+            <button class="btn btn-sm">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if requests %}
+<div class="panel" style="margin-bottom:20px;border-left:4px solid #8a5c08">
+  <h2>&#9993; Pending access requests ({{ requests|length }})</h2>
+  <div class="body">
+    <table>
+      <tr><th>Name</th><th>Email</th><th>Reason</th><th>Asked</th>
+          <th style="min-width:230px">Decision</th></tr>
+      {% for r in requests %}
+      <tr>
+        <td>{{ r.name }}</td><td>{{ r.email }}</td>
+        <td class="hint">{{ r.note or '&mdash;'|safe }}</td>
+        <td>{{ r.created_at|ago }}</td>
+        <td style="white-space:nowrap">
+          <form class="inline" method="post" action="/users/requests/{{ r.id }}/approve">
+            <select name="role" style="padding:4px;border:1px solid #ccd4da;border-radius:3px">
+              {% for role in roles %}
+              {% if role.value != 'owner' or user.role.value == 'owner' %}
+              <option value="{{ role.value }}" {{ 'selected' if role.value == 'front_desk' }}>
+                {{ role_label(role) }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-green">Approve</button>
+          </form>
+          <form class="inline" method="post" action="/users/requests/{{ r.id }}/decline">
+            <button class="btn btn-sm">Decline</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="hint" style="margin-top:12px">Approving creates the account and shows a
+      temporary password once.</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>&#128100; Staff accounts</h2>
+  <div class="body">
+    <div class="scroll" style="overflow-x:auto">
+    <table>
+      <tr><th>Name</th><th>Email</th><th style="min-width:150px">Role</th>
+          <th>Status</th><th>Last sign-in</th><th></th></tr>
+      {% for u in staff %}
+      <tr {{ 'style=opacity:.55' if not u.is_active }}>
+        <td>{{ u.name }}
+          {%- if u.id == user.id %} <span class="hint">(you)</span>{% endif %}
+          {%- if u.must_change_password %}
+          <div class="hint" style="font-size:12px">must change password</div>{% endif %}</td>
+        <td>{{ u.email }}</td>
+        <td>
+          <form class="inline" method="post" action="/users/{{ u.id }}/role">
+            <select name="role" onchange="this.form.submit()"
+                    {{ 'disabled' if u.id == user.id or not u.is_active }}
+                    style="padding:5px;border:1px solid #ccd4da;border-radius:3px">
+              {% for r in roles %}
+              <option value="{{ r.value }}" {{ 'selected' if r == u.role }}>
+                {{ r.value.replace('_',' ') }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </td>
+        <td>{% if u.is_active %}<span style="color:#2a7048">active</span>
+            {% else %}<span class="hint">inactive</span>{% endif %}</td>
+        <td>{{ u.last_login|ago if u.last_login else 'never' }}</td>
+        <td style="white-space:nowrap">
+          {% if u.is_active %}
+          <form class="inline" method="post" action="/users/{{ u.id }}/reset">
+            <button class="btn btn-sm">Reset password</button>
+          </form>
+          {% endif %}
+          <form class="inline" method="post" action="/users/{{ u.id }}/active">
+            <button class="btn btn-sm" {{ 'disabled title="You cannot deactivate yourself"'
+              if u.id == user.id }}>{{ 'Deactivate' if u.is_active else 'Reactivate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    <p class="hint" style="margin-top:14px">Accounts are deactivated, never deleted &mdash;
+      deleting one would leave audit entries pointing at nobody.</p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:20px">
+  <h2>&#10010; Add a staff account</h2>
+  <div class="body">
+    <form method="post" action="/users/new" style="display:grid;gap:13px;max-width:460px">
+      <label>Full name<input type="text" name="name" required
+        style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px"></label>
+      <label>Email<input type="email" name="email" required
+        style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px"></label>
+      <label>Role
+        <select name="role" style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px">
+          {% for r in roles %}
+          {% if r.value != 'owner' or user.role.value == 'owner' %}
+          <option value="{{ r.value }}" {{ 'selected' if r.value == 'front_desk' }}>
+            {{ r.value.replace('_',' ') }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <div><button class="btn btn-green">Create account</button></div>
+      <p class="hint">A temporary password is generated and shown once.</p>
+    </form>
+  </div>
+</div>
+{% endblock %}

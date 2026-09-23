@@ -1,0 +1,15 @@
+# The server. Everything here runs anywhere - desktop, a box on the practice
+# network, or a hosted platform. Keep it that way: a dependency that only makes
+# sense on one of those belongs in requirements-desktop.txt.
+fastapi>=0.115
+uvicorn[standard]>=0.32
+jinja2>=3.1
+sqlalchemy>=2.0
+python-multipart>=0.0.12
+itsdangerous>=2.2
+psycopg[binary]>=3.2
+openpyxl>=3.1
+# Encrypts API keys entered through the Connections screen, so a copy of
+# the database - a nightly backup on a laptop, say - is not a copy of the
+# practice's credentials.
+cryptography>=43.0

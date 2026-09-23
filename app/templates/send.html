@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Send Form{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Send Form to Client</div>{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:640px"><h2>&#9993; Send Form to Client</h2><div class="body">
+<form method="post" action="/send" style="display:grid;gap:15px">
+  <label>Client
+    <select name="client_id" required style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px">
+      {% for c in clients %}
+      <option value="{{ c.id }}" {{ 'selected' if preselect == c.id }}>{{ c.name }} &mdash; {{ c.email or 'no email' }}
+        {%- if not c.allow_email and not c.allow_sms %} (no contact consent){% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Form
+    {# Radio buttons, not a dropdown. A dropdown silently pre-selects whichever
+       form happens to sort first, and the wrong form goes out without anybody
+       having chosen anything. With radios nothing is selected until somebody
+       selects it, and every option is readable at once. #}
+    <div style="border:1px solid #ccd4da;border-radius:3px;padding:4px 2px">
+      {% for f in forms %}
+      <label style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px;
+                    border-bottom:1px solid var(--rule);cursor:pointer">
+        <input type="radio" name="form_id" value="{{ f.id }}" required
+               style="margin-top:3px">
+        <span>
+          <b>{{ f.name }}</b>
+          <span class="hint" style="display:block;font-size:13px">
+            {{ f.questions|length }} question{{ 's' if f.questions|length != 1 }}
+            {%- set pages = f.questions | map(attribute='page') | list | unique | list -%}
+            {%- if pages %} &middot; {{ pages|length }} page{{ 's' if pages|length != 1 }}{% endif %}
+            {%- if f.consents %} &middot; {{ f.consents|length }} consent form{{ 's' if f.consents|length != 1 }}{% endif %}
+          </span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </label>
+
+  <fieldset style="border:1px solid var(--rule);border-radius:3px;padding:12px 16px">
+    <legend class="hint" style="padding:0 6px">Send the link by</legend>
+    <label style="display:flex;gap:9px;align-items:center;padding:3px 0">
+      <input type="checkbox" name="channels" value="email" checked> Email</label>
+    <label style="display:flex;gap:9px;align-items:center;padding:3px 0">
+      <input type="checkbox" name="channels" value="sms"> SMS</label>
+    <p class="hint" style="margin:8px 0 0">Leave both unticked to create the link
+       without sending it &mdash; you can copy it from the submission page.</p>
+  </fieldset>
+
+  <div><button class="btn btn-green">Send form</button></div>
+</form>
+
+<p class="hint" style="margin-top:18px;border-top:1px solid var(--rule);padding-top:14px">
+  Email backend: <b>{{ backends.email }}</b> &middot; SMS backend: <b>{{ backends.sms }}</b><br>
+  Messages name no form and no condition
+  {%- if backends.include_form_name == 'yes' %} <b style="color:#8a5c08">
+  &mdash; except MESSAGING_INCLUDE_FORM_NAME is on, so the form name IS included</b>{% endif %}.
+</p>
+</div></div>
+{% endblock %}

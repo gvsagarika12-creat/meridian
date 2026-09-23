@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:520px;margin-top:30px">
+  <h2>&#128269; Not found</h2>
+  <div class="body" style="padding:20px">
+    <p>{{ detail }}</p>
+    <p class="hint">It may have been deleted, or the link may be wrong.</p>
+    <p style="margin-top:18px"><a class="btn" href="/">&larr; Back to dashboard</a></p>
+  </div>
+</div>
+{% endblock %}

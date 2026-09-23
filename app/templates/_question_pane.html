@@ -1,0 +1,104 @@
+{# Right pane when a question is selected. Mirrors IntakeQ's block editor. #}
+<div class="q-pane">
+  <div class="q-pane-top">
+    <a class="close" href="/forms/{{ form.id }}" title="Close">&times;</a>
+    <button class="btn q-options" type="button">&#9881; Question Options</button>
+  </div>
+
+  <h2 class="q-h">Question Type</h2>
+  <div class="q-type">
+    <form method="post" action="/questions/{{ selected.id }}/type" class="inline">
+      <select name="qtype" onchange="this.form.submit()">
+        {% for t in qtypes %}
+        <option value="{{ t.value }}" {{ 'selected' if t == selected.qtype }}>
+          {{ TYPE_LABELS.get(t.value, t.value) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <h2 class="q-h">Block Instructions (optional)</h2>
+  <form method="post" action="/questions/{{ selected.id }}/text">
+    <textarea name="text" class="q-instructions" rows="4"
+              onblur="this.form.submit()">{{ selected.text }}</textarea>
+  </form>
+
+  {% if selected.qtype.value == 'mixed_controls' %}
+    <div class="q-help"><a href="#">help</a></div>
+    <h2 class="q-h">Items</h2>
+
+    <div class="items">
+      {% for it in selected.items %}
+      <div class="item {{ 'wide' if it.width == 2 }}">
+        <div class="item-head">
+          <span class="lbl">{{ it.label }}</span>
+          <span class="gear" title="Item options">&#9881;</span>
+        </div>
+        {% if it.kind.value == 'list' %}
+          <div class="per-line">Enter 1 option per line:</div>
+          <div class="optbox">{% for o in it.options %}<div>{{ o }}</div>{% endfor %}</div>
+        {% elif it.kind.value == 'date' %}
+          <div class="answer-space">Space for date</div>
+        {% else %}
+          <div class="answer-space">Space for answer</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <div class="item add-item">
+        <form method="post" action="/questions/{{ selected.id }}/items/new"
+              style="display:grid;gap:8px">
+          <input type="text" name="label" placeholder="Type item label here" required>
+          <div style="display:flex;gap:8px">
+            <select name="kind">
+              <option value="text">Text</option>
+              <option value="date">Date</option>
+              <option value="list">List of options</option>
+            </select>
+            <button class="btn btn-sm btn-green">Add item</button>
+          </div>
+          <textarea name="options" rows="2" placeholder="Options, one per line"></textarea>
+        </form>
+      </div>
+    </div>
+
+  {% elif selected.qtype.value == 'matrix' %}
+    <h2 class="q-h">Rows &amp; scale</h2>
+    <form method="post" action="/questions/{{ selected.id }}/matrix"
+          style="display:grid;gap:14px;max-width:660px">
+      <label>Rows <span class="hint">(one item per line)</span>
+        <textarea name="rows" rows="6">{{ selected.rows_raw }}</textarea></label>
+      <label>Scale <span class="hint">(one option per line)</span>
+        <textarea name="options" rows="4">{{ selected.options_raw }}</textarea></label>
+      <div><button class="btn btn-green">Save</button></div>
+    </form>
+
+  {% else %}
+    <h2 class="q-h">Possible Answers</h2>
+    <form method="post" action="/questions/{{ selected.id }}/options"
+          style="display:grid;gap:12px;max-width:660px">
+      <textarea name="options" rows="6"
+                placeholder="One option per line. Leave empty for a free-text answer."
+      >{{ selected.options_raw }}</textarea>
+      <div><button class="btn btn-green">Save</button></div>
+    </form>
+  {% endif %}
+
+  <div class="add-row">
+    <button class="dk" type="button">&#9998; Add Text Box</button>
+    <button class="dk" type="button">&#9745; Add Check Boxes</button>
+    <button class="dk" type="button">&#9673; Add Radio Buttons</button>
+    <button class="dk" type="button">Others &#9650;</button>
+  </div>
+
+  <div class="q-foot">
+    <form method="post" action="/questions/{{ selected.id }}/duplicate" class="inline">
+      <button class="btn">&#128203; Duplicate</button>
+    </form>
+    {% if can(user, P.FORMS_DELETE) %}
+    <form method="post" action="/questions/{{ selected.id }}/delete" class="inline">
+      <button class="btn btn-danger">&#128465; Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>

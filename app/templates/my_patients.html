@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}My Patients{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>My Patients
+  <div class="actions">
+    {% if can(user, P.SUBMISSIONS_SEND) %}
+    <a class="btn btn-green" href="/send">Send a form</a>{% endif %}
+    <a class="btn" href="/records">Combined records</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap">
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ note }}</div>
+{% endif %}
+
+<div class="case-head">
+  <form method="get" action="/my-patients" class="case-filter">
+    <select name="provider" onchange="this.form.submit()">
+      <option value="0" {{ 'selected' if provider == 0 }}>Everyone&rsquo;s patients</option>
+      {% for d in doctors %}
+      <option value="{{ d.id }}" {{ 'selected' if provider == d.id }}>
+        {{ d.name }}{{ ' (me)' if user and d.id == user.id }}</option>
+      {% endfor %}
+      <option value="-2" {{ 'selected' if provider == -2 }}>
+        Unassigned ({{ unassigned }})</option>
+    </select>
+    <input type="text" name="q" value="{{ q }}" placeholder="Search by name">
+    <button class="btn btn-sm">Search</button>
+    {% if q %}<a class="btn btn-sm" href="/my-patients?provider={{ provider }}">Clear</a>{% endif %}
+  </form>
+
+  <div class="hint">
+    {{ cards|length }} patient{{ 's' if cards|length != 1 }}
+    {%- if trial %} &middot; screened against <b>{{ trial.name }}</b>
+    {%- else %} &middot; <span style="color:var(--warn)">no trial is recruiting,
+      so nothing can be screened</span>{% endif %}
+  </div>
+</div>
+
+<div class="cards">
+  {% for card in cards %}
+  {% set c = card.client %}
+  {% set s = card.screening %}
+  <div class="pcard">
+
+    <div class="pcard-top">
+      <span class="ini">{{ c.initials }}</span>
+      <div class="who">
+        <a class="nm" href="/clients/{{ c.id }}">{{ c.name }}</a>
+        <div class="hint">RD-{{ '%04d' % c.id }}
+          {%- if c.dob %} &middot; {{ c.dob.strftime('%d %b %Y') }}{% endif %}</div>
+      </div>
+      {% if s %}
+      <span class="badge {{ s.badge | replace(' ', '-') }}">{{ s.badge }}</span>
+      {% endif %}
+    </div>
+
+    {% if s %}
+    <div class="tally">
+      <span>{{ card.inclusion[0] }}/{{ card.inclusion[1] }} inclusion</span>
+      <span>{{ card.exclusion[0] }}/{{ card.exclusion[1] }} exclusion</span>
+    </div>
+    {% endif %}
+
+    <div class="pcard-foot">
+      {# The assigned clinician is a control, not a label. Reassigning is the
+         single most common edit on this screen - cover, holidays, a referral -
+         and sending it through the patient's chart would make a routine act
+         take four clicks. #}
+      {% if can(user, P.CLIENTS_EDIT) %}
+      <form method="post" action="/clients/{{ c.id }}/provider" class="assign">
+        <input type="hidden" name="back"
+               value="/my-patients?provider={{ provider }}&q={{ q }}">
+        <select name="provider_id" onchange="this.form.submit()">
+          <option value="">Unassigned</option>
+          {% for d in doctors %}
+          <option value="{{ d.id }}" {{ 'selected' if c.provider_id == d.id }}>
+            {{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}
+      <span class="hint">{{ c.provider.name if c.provider else 'Unassigned' }}</span>
+      {% endif %}
+
+      <div class="acts">
+        {% if can(user, P.SUBMISSIONS_SEND) %}
+        {% if card.open_form %}
+        <a class="btn btn-sm" href="/submissions/{{ card.open_form.id }}"
+           title="A form is already out with this patient">Form sent</a>
+        {% else %}
+        <a class="btn btn-sm btn-green" href="/send?client={{ c.id }}">Send form</a>
+        {% endif %}
+        {% endif %}
+        <a class="btn btn-sm" href="/clients/{{ c.id }}">Medical record</a>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel" style="grid-column:1 / -1">
+    <div class="body">
+      <p style="margin:0">
+        {% if provider > 0 %}No patients are assigned to this clinician yet.
+          Pick <b>Everyone&rsquo;s patients</b> above, then use the dropdown on a
+          card to assign one.
+        {% elif provider == -2 %}Every patient has a clinician. Nothing unassigned.
+        {% else %}No patients match.{% endif %}
+      </p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="hint" style="margin-top:20px;border-top:1px solid var(--rule);padding-top:14px;
+          max-width:820px">
+  <b>meets</b> &mdash; every criterion answered and none of them rules the patient
+  out.<br>
+  <b>needs verification</b> &mdash; nothing rules them out, but some criteria have
+  no answer yet. Usually a form that has not come back.<br>
+  <b>potential exclusion</b> &mdash; at least one criterion rules them out on the
+  evidence so far.<br><br>
+  Worked out fresh each time this page loads, from the patient&rsquo;s answers and
+  their hospital record together. It is a screening aid, not a decision &mdash;
+  eligibility is decided by a clinician against the protocol.
+</p>
+
+<style>
+  .case-head{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .case-filter{display:flex;gap:9px;flex-wrap:wrap}
+  .case-filter select,.case-filter input{padding:8px 10px;border:1px solid #ccd4da;
+    border-radius:6px;font-family:inherit;font-size:14px}
+  .case-filter input{min-width:190px}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}
+  .pcard{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+    padding:14px 15px 12px;display:flex;flex-direction:column;gap:10px}
+
+  .pcard-top{display:flex;gap:11px;align-items:flex-start}
+  .ini{flex:none;width:36px;height:36px;border-radius:9px;background:var(--accent-soft);
+    color:var(--accent-dark);font-weight:700;font-size:13px;display:flex;
+    align-items:center;justify-content:center;letter-spacing:.5px}
+  .pcard .who{flex:1;min-width:0}
+  .pcard .nm{font-weight:600;font-size:15px;color:var(--ink);text-decoration:none}
+  .pcard .nm:hover{text-decoration:underline}
+
+  .badge{flex:none;font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:9px;
+    text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;align-self:flex-start}
+  .badge.meets              {background:var(--good-soft);color:var(--good)}
+  .badge.needs-verification {background:var(--warn-soft);color:var(--warn)}
+  .badge.potential-exclusion{background:var(--bad-soft);color:var(--bad)}
+  .badge.no-criteria        {background:#eef1f3;color:var(--ink-3)}
+
+  .tally{display:flex;gap:14px;font-size:12.5px;color:var(--ink-2);
+    font-variant-numeric:tabular-nums}
+
+  .pcard-foot{display:flex;gap:9px;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;border-top:1px solid var(--rule);padding-top:10px;margin-top:auto}
+  .assign select{padding:4px 7px;border:1px solid #d9d6d0;border-radius:6px;
+    font-family:inherit;font-size:12.5px;color:var(--ink-2);max-width:150px}
+  .pcard .acts{display:flex;gap:7px}
+</style>
+</div>
+{% endblock %}
+{% block content %}{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Roles and permissions{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Roles &amp; Permissions</div>{% endblock %}
+{% block content %}
+<div class="panel"><h2>&#128273; Who can do what</h2><div class="body">
+<p class="hint" style="margin-bottom:14px">Your role is
+  <b>{{ role_label(user.role) }}</b>. This is the whole policy.</p>
+<div class="scroll" style="overflow-x:auto">
+<table>
+  <tr><th style="min-width:230px">Permission</th>
+  {% for r in roles %}<th style="text-align:center">{{ role_label(r) }}</th>{% endfor %}</tr>
+  {% for perm, label, grants in rows %}
+  <tr>
+    <td>{{ label }}<div class="hint" style="font-size:12px">{{ perm }}</div></td>
+    {% for r in roles %}
+    <td style="text-align:center;{{ 'background:#f6f9f8' if r == user.role.value }}">
+      {% if grants[r] %}<span style="color:#2a7048;font-weight:700">&#10003;</span>
+      {% else %}<span class="hint">&mdash;</span>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<p class="hint" style="margin-top:14px">Buttons you cannot use are hidden, and the
+server refuses the action even if the request is made directly.</p>
+</div></div>
+
+<div class="panel" style="margin-top:20px"><h2>&#128100; Staff</h2><div class="body">
+<table><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last sign-in</th></tr>
+{% for u in staff %}
+<tr><td>{{ u.name }}{% if u.id == user.id %} <span class="hint">(you)</span>{% endif %}</td>
+<td>{{ u.email }}</td><td>{{ role_label(u.role) }}</td>
+<td>{{ 'yes' if u.is_active else 'no' }}</td>
+<td>{{ u.last_login|ago if u.last_login else 'never' }}</td></tr>
+{% endfor %}
+</table>
+</div></div>
+{% endblock %}

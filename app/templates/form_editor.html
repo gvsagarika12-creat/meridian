@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}{{ form.name }}{% endblock %}
+
+{% block chrome %}
+<div class="ed-toolbar">
+  <a href="/forms" title="Back to all forms">&larr;</a>
+  <a href="/send">&#9993; Send to Client</a>
+  <a href="/preview/{{ form.id }}">&#128269; Preview</a>
+  <a href="/forms/{{ form.id }}?tab=consents">&#128196; Consent Forms
+    {%- if form.consents %} ({{ form.consents|length }}){% endif %}</a>
+  <span class="saved" style="display:inline-flex;align-items:center;gap:8px;
+        padding:0 22px;border-right:1px solid rgba(255,255,255,.22)">&#128190; Saved</span>
+
+  <details class="ed-menu">
+    <summary title="More">&#8230;</summary>
+    <div class="ed-menu-list">
+      <a href="/forms/{{ form.id }}#new">&#128218; Questions Library</a>
+      <a href="/forms/{{ form.id }}/print">&#128424; Print PDF</a>
+      <a href="/forms/{{ form.id }}/url">&#128279; Get URL</a>
+      <form method="post" action="/forms/{{ form.id }}/duplicate" style="margin:0">
+        <button type="submit" style="width:100%;justify-content:flex-start;
+                border:0;padding:13px 20px;min-height:0;font-size:15px">
+          &#128203; Duplicate</button>
+      </form>
+      <a href="/forms/{{ form.id }}/settings">&#9881; Settings</a>
+      <a href="/forms/{{ form.id }}/rules">&#9889; Rules</a>
+      {% if can(user, P.FORMS_DELETE) %}
+      <form method="post" action="/forms/{{ form.id }}/delete" style="margin:0"
+            onsubmit="return confirm('Delete {{ form.name }}? Submissions already received are kept.')">
+        <button type="submit" class="danger" style="width:100%;justify-content:flex-start;
+                border:0;padding:13px 20px;min-height:0;font-size:15px">
+          &#128465; Delete Form</button>
+      </form>
+      {% endif %}
+    </div>
+  </details>
+
+  <span class="spacer"></span>
+  {% if can(user, P.FORMS_EDIT) %}
+  <a class="add" href="#new">&#10010; Add New Question</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}{% endblock %}
+
+{% block full %}
+<div class="ed-split">
+
+  <!-- ---------- left: the question list ---------- -->
+  <div class="ed-list">
+    <div class="ed-list-head">
+      <input type="checkbox" title="Select all">
+      <span class="nm">{{ form.name }}</span>
+      {% if can(user, P.FORMS_EDIT) %}<a class="plus" href="#new" title="Add a question">+</a>{% endif %}
+    </div>
+
+    {% for q in form.questions %}
+    <div class="ed-q {{ 'on' if selected and selected.id == q.id }}">
+      <input type="checkbox">
+      <a class="pick" href="/forms/{{ form.id }}?q={{ q.id }}">
+        <span class="n">{{ loop.index }} .</span>
+        <div class="t">
+          {{ q.text }}{% if q.required %} <span class="req">*</span>{% endif %}
+          <div class="meta">
+            {{ TYPE_LABELS.get(q.qtype.value, q.qtype.value) }} &middot; page {{ q.page }}
+            {%- if q.items %} &middot; {{ q.items|length }} items{% endif %}
+            {%- if q.rows %} &middot; {{ q.rows|length }} rows{% endif %}
+            {%- if q.options %} &middot; {{ q.options|length }} options{% endif %}
+          </div>
+        </div>
+      </a>
+      <div class="ops">
+        {% if can(user, P.FORMS_EDIT) %}
+        <form class="inline" method="post" action="/questions/{{ q.id }}/move">
+          <input type="hidden" name="direction" value="up"><button class="btn btn-sm">&uarr;</button>
+        </form>
+        <form class="inline" method="post" action="/questions/{{ q.id }}/move">
+          <input type="hidden" name="direction" value="down"><button class="btn btn-sm">&darr;</button>
+        </form>
+        {% endif %}
+        {% if can(user, P.FORMS_DELETE) %}
+        <form class="inline" method="post" action="/questions/{{ q.id }}/delete">
+          <button class="btn btn-sm">&times;</button>
+        </form>
+        {% endif %}
+      </div>
+      <span class="grip" title="Drag to reorder"><i></i><i></i><i></i></span>
+    </div>
+    {% else %}
+    <div class="ed-q"><span class="hint">No questions yet. Add the first one.</span></div>
+    {% endfor %}
+  </div>
+
+  <!-- ---------- right: what you can do ---------- -->
+  {% if selected %}
+  {% include "_question_pane.html" %}
+  {% else %}
+  <div class="ed-info">
+    <div class="doc">
+      <svg width="104" height="124" viewBox="0 0 52 62" fill="none" aria-hidden="true">
+        <path d="M4 3h29l15 15v41a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z"
+              stroke="#2d8fd5" stroke-width="3" fill="#fff"/>
+        <path d="M33 3v15h15" stroke="#2d8fd5" stroke-width="3" fill="none"/>
+        <rect x="11" y="28" width="30" height="3.4" rx="1.7" fill="#2d8fd5"/>
+        <rect x="11" y="37" width="30" height="3.4" rx="1.7" fill="#2d8fd5"/>
+        <rect x="11" y="46" width="19" height="3.4" rx="1.7" fill="#2d8fd5"/>
+      </svg>
+      <div>
+        <h1>{{ form.name }}</h1>
+        <div class="count">{{ form.questions|length }} Question{{ 's' if form.questions|length != 1 }}</div>
+      </div>
+    </div>
+
+    <h3>Common things you can do here:</h3>
+    <ul>
+      <li><a href="#new">Add a new Question</a></li>
+      <li><a href="/forms/{{ form.id }}?tab=consents">Attach consent forms</a></li>
+      <li><a href="/send">Send intake form to a client</a></li>
+      <li><a href="/preview/{{ form.id }}">Preview this intake form</a></li>
+      <li><a href="/forms/{{ form.id }}/print">Print this intake form</a></li>
+    </ul>
+
+    <h3>How to:</h3>
+    <ul>
+      <li><a href="/send">Send an intake form to a client</a></li>
+      <li><a href="/forms/{{ form.id }}/url">Get a link to share</a></li>
+      <li><a href="/submissions">See what has come back</a></li>
+      <li><a href="/forms">Back to all forms</a></li>
+    </ul>
+
+    <!-- add-question panel -->
+    {% if can(user, P.FORMS_EDIT) %}
+    <div id="new" style="margin-top:38px;border-top:1px solid var(--rule);padding-top:26px">
+      <h3 style="margin-top:0">&#10010; Add New Question</h3>
+      <form method="post" action="/forms/{{ form.id }}/questions/new"
+            style="display:grid;gap:12px;max-width:560px">
+        <label>Question text
+          <textarea name="text" rows="2" required
+            style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px;
+                   font-family:inherit"></textarea></label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <label>Type
+            <select name="qtype" style="padding:8px;border:1px solid #ccd4da;border-radius:3px">
+              {% for t in qtypes %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}
+            </select></label>
+          <label>Page
+            <input type="number" name="page" value="1" min="1"
+                   style="width:80px;padding:8px;border:1px solid #ccd4da;border-radius:3px"></label>
+          <label style="display:flex;align-items:center;gap:7px;padding-bottom:9px">
+            <input type="checkbox" name="required" value="1"> Required</label>
+        </div>
+        <label>Rows <span class="hint">(matrix only &mdash; one item per line)</span>
+          <textarea name="rows" rows="3"
+            style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px;
+                   font-family:inherit"></textarea></label>
+        <label>Options <span class="hint">(one per line; for a matrix this is the scale)</span>
+          <textarea name="options" rows="3"
+            style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px;
+                   font-family:inherit"></textarea></label>
+        <div><button class="btn btn-green">Add question</button></div>
+      </form>
+    </div>
+
+    <div style="margin-top:34px;border-top:1px solid var(--rule);padding-top:26px">
+      <h3 style="margin-top:0">&#128196; Consent Forms</h3>
+      <p class="hint" style="margin-bottom:12px">Choose the Consent Form(s) to attach to
+        this questionnaire:</p>
+      <div class="consent-grid">
+        {% for c in consents %}
+        <form method="post" action="/forms/{{ form.id }}/consents/{{ c.id }}/toggle">
+          <label><input type="checkbox" onchange="this.form.submit()"
+                 {{ 'checked' if c.id in attached }}> {{ c.name }}
+            {%- if not (c.body or '').strip() %}
+            <a href="/consents/{{ c.id }}" title="This document has no wording, so
+               patients are never shown it and cannot sign it"
+               style="color:var(--bad);font-size:12px;margin-left:5px;
+                      white-space:nowrap">&#9888; no wording</a>
+            {%- endif %}</label>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

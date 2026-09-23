@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{{ practice.short_name or practice.name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="shell">
+
+{#  Navigation lives down the side rather than across the top. A horizontal tab
+    bar runs out of room at nine sections and forces every label into shouty
+    uppercase to fit; a rail has room for sentence case, a section heading, and
+    the unread count sitting next to the thing it counts.  #}
+<aside class="rail">
+  <a class="rail-brand" href="/">
+    <span class="mark">{{ (practice.short_name or practice.name)[:1] }}</span>
+    <span class="rail-name">{{ practice.short_name or practice.name }}</span>
+  </a>
+
+  <nav>
+    <a href="/" class="{{ 'on' if nav=='home' }}"><i>▦</i>Dashboard</a>
+
+    {% if can(user, P.FORMS_VIEW) or can(user, P.SUBMISSIONS_VIEW) %}
+    <div class="rail-head">Intake</div>{% endif %}
+    {% if can(user, P.FORMS_VIEW) %}
+    <a href="/forms" class="{{ 'on' if nav=='forms' }}"><i>❐</i>Forms</a>
+    <a href="/consents" class="{{ 'on' if nav=='consents' }}"><i>✎</i>Consents</a>{% endif %}
+    {% if can(user, P.CLIENTS_VIEW) %}
+    <a href="/my-patients" class="{{ 'on' if nav=='mypatients' }}"><i>✚</i>My Patients</a>
+    <a href="/clients" class="{{ 'on' if nav=='clients' }}"><i>☺</i>All Patients</a>{% endif %}
+    {% if can(user, P.SUBMISSIONS_VIEW) %}
+    <a href="/submissions" class="{{ 'on' if nav=='submissions' }}"><i>✎</i>Submissions
+      {% if unread %}<b class="count">{{ unread }}</b>{% endif %}</a>{% endif %}
+    {% if can(user, P.CLIENTS_VIEW) %}
+    <a href="/calendar" class="{{ 'on' if nav=='calendar' }}"><i>▣</i>Calendar
+      {% if due %}<b class="count">{{ due }}</b>{% endif %}</a>{% endif %}
+
+    {% if can(user, P.SUBMISSIONS_VIEW) %}
+    <div class="rail-head">Research</div>
+    <a href="/records" class="{{ 'on' if nav=='records' }}"><i>▤</i>Records</a>
+    <a href="/archive" class="{{ 'on' if nav=='archive' }}"><i>⌸</i>Archive</a>
+    <a href="/trials" class="{{ 'on' if nav=='trials' }}"><i>◈</i>Trials</a>
+    {% endif %}
+
+    {% if can(user, P.SUBMISSIONS_VIEW) or can(user, P.EVENTS_VIEW)
+          or can(user, P.USERS_MANAGE) %}
+    <div class="rail-head">Practice</div>{% endif %}
+    {% if can(user, P.SUBMISSIONS_VIEW) %}
+    <a href="/outbox" class="{{ 'on' if nav=='outbox' }}"><i>✉</i>Outbox</a>{% endif %}
+    {% if can(user, P.EVENTS_VIEW) %}
+    <a href="/events" class="{{ 'on' if nav=='events' }}"><i>⎘</i>Activity</a>{% endif %}
+    {% if can(user, P.USERS_MANAGE) %}
+    <a href="/users" class="{{ 'on' if nav=='users' }}"><i>⚇</i>Staff</a>
+    <a href="/integrations" class="{{ 'on' if nav=='integrations' }}"><i>⇄</i>Connections</a>{% endif %}
+  </nav>
+
+  <a class="rail-me" href="/account">
+    <span class="avatar">{{ user.initials if user else '?' }}</span>
+    <span class="who">
+      <b>{{ user.name if user else '' }}</b>
+      <em>{{ role_label(user.role) if user else '' }}</em>
+    </span>
+  </a>
+  <a class="rail-out" href="/logout">Sign out</a>
+</aside>
+
+<main class="stage">
+  {% block chrome %}{% endblock %}
+  {% block full %}{% endblock %}
+  {% if self.content() | trim %}<div class="wrap">{% block content %}{% endblock %}</div>{% endif %}
+</main>
+
+</body>
+</html>
