@@ -42,6 +42,7 @@ from . import credentials
 from . import cache
 from . import integrations
 from . import intakeq
+from . import documents
 from . import ehr
 from . import simulation
 from . import tebra
@@ -241,6 +242,10 @@ def ctx(request: Request, db: Session, **extra) -> dict:
         #  Results that came back and nobody has said they have seen. The one
         #  clinical count worth a badge: an unread result is the failure with
         #  consequences, and it should be visible without going looking.
+        "unfiled_docs": cache.get_or_set(
+            "nav:unfiled",
+            lambda: db.query(documents.Document).filter(
+                documents.Document.client_id.is_(None)).count()),
         "unreviewed": cache.get_or_set(
             "nav:unreviewed",
             lambda: db.query(ehr.Order).filter(
@@ -1226,6 +1231,9 @@ def client_chart(client_id: int, request: Request, db: Session = Depends(get_db)
                 .order_by(ehr.Order.id.desc()).all()),
         charges=(db.query(ehr.Charge).filter_by(client_id=client.id)
                  .order_by(ehr.Charge.id.desc()).all()),
+        documents=(db.query(documents.Document).filter_by(client_id=client.id)
+                   .order_by(documents.Document.uploaded_at.desc()).all()),
+        doc_labels=documents.LABELS,
         imported_intakes=(db.query(intakeq.ImportedIntake)
                           .filter_by(client_id=client.id)
                           .order_by(intakeq.ImportedIntake.submitted_at.desc())
@@ -2845,3 +2853,208 @@ def _date_or_none(raw: str):
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+# ------------------------------------------------------------------ documents
+#
+# Scans, faxes and outside records. Bytes are stored in the database rather than
+# on disk - the hosted copy has a read-only filesystem, and a row pointing at a
+# file nobody can open is worse than no row at all.
+
+
+@app.get("/documents", response_class=HTMLResponse)
+def documents_list(request: Request, show: str = "unfiled",
+                   db: Session = Depends(get_db),
+                   _=Depends(needs(perms.CLIENTS_VIEW))):
+    """The document queue, unfiled first.
+
+    Unfiled is the default view because it is the only one that represents
+    work. A list of everything sorted by date is an archive; the question
+    somebody opens this screen to answer is "what has come in that nobody has
+    dealt with".
+    """
+    rows = db.query(documents.Document)
+    if show == "unfiled":
+        rows = rows.filter(documents.Document.client_id.is_(None))
+    elif show == "unprocessed":
+        rows = rows.filter(documents.Document.processed.is_(False))
+    rows = rows.order_by(documents.Document.uploaded_at.desc()).limit(300).all()
+
+    return render("documents.html", ctx(
+        request, db, nav="documents", docs=rows, show=show,
+        labels=documents.LABELS,
+        clients=db.query(Client).filter_by(archived=False)
+                 .order_by(Client.last_name).all(),
+        unfiled=db.query(documents.Document)
+                  .filter(documents.Document.client_id.is_(None)).count(),
+        note=request.session.pop("document_note", ""),
+        error=request.session.pop("document_error", "")))
+
+
+@app.post("/documents/upload")
+async def document_upload(request: Request, db: Session = Depends(get_db),
+                          _=Depends(needs(perms.CLIENTS_EDIT))):
+    """Take a file in, having actually looked at it.
+
+    Three checks, in this order and for different reasons: a size cap so one
+    upload cannot exhaust memory, a magic-number check because the declared
+    media type comes from the client and a browser will say whatever it is told,
+    and a non-empty check because an empty file is a failed scan and filing it
+    silently means somebody believes the card is on record.
+    """
+    form = await request.form()
+    upload = form.get("file")
+    me = auth.current_user(request, db)
+    back = (form.get("back") or "/documents").strip() or "/documents"
+
+    if upload is None or not getattr(upload, "filename", ""):
+        request.session["document_error"] = "No file was chosen."
+        return RedirectResponse(back, status_code=303)
+
+    #  Read with a cap rather than reading then measuring: reading first is how
+    #  a large upload becomes a memory problem before anybody has checked it.
+    data = await upload.read(documents.MAX_BYTES + 1)
+    if len(data) > documents.MAX_BYTES:
+        request.session["document_error"] = (
+            f"That file is larger than "
+            f"{documents.MAX_BYTES // (1024 * 1024)} MB. Scan at a lower "
+            f"resolution, or split it.")
+        return RedirectResponse(back, status_code=303)
+    if not data:
+        request.session["document_error"] = (
+            "That file is empty - usually a scan that did not complete. "
+            "Nothing was saved, because a blank record of an insurance card "
+            "is worse than none.")
+        return RedirectResponse(back, status_code=303)
+
+    media = documents.sniff(data[:64], (upload.content_type or "").split(";")[0])
+    if media is None:
+        request.session["document_error"] = (
+            "That file type is not accepted. PDFs, images and plain text only "
+            "- and the check is on the file's own contents, not its name.")
+        return RedirectResponse(back, status_code=303)
+
+    client_id = _int_or_none(form.get("client_id") or "")
+    if client_id and db.get(Client, client_id) is None:
+        client_id = None
+
+    doc = documents.Document(
+        client_id=client_id,
+        name=(form.get("name") or "").strip()[:255]
+             or documents.safe_name(upload.filename),
+        file_name=documents.safe_name(upload.filename),
+        media_type=media, size_bytes=len(data), sha256=documents.digest(data),
+        content=data,
+        label=(form.get("label") or "Other").strip()[:64],
+        received_from=(form.get("received_from") or "").strip()[:255],
+        notes=(form.get("notes") or "").strip(),
+        uploaded_by=(me.name if me else "")[:160])
+    db.add(doc)
+    db.flush()
+
+    #  A document arriving is a PHI event. Naming the label rather than the
+    #  filename keeps the audit line useful without putting a patient's name
+    #  into it twice over.
+    cache.drop("nav:unfiled")
+    log(db, f"Document received: {doc.label[:30]}", "document", doc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+
+    same = (db.query(documents.Document)
+            .filter(documents.Document.sha256 == doc.sha256,
+                    documents.Document.id != doc.id).count())
+    request.session["document_note"] = (
+        f"{doc.name} stored ({doc.size_human})."
+        + (f" Note: {same} other document(s) have identical contents."
+           if same else "")
+        + ("" if client_id else " It is unfiled - attach it to a patient when "
+                                "you know whose it is."))
+    return RedirectResponse(back, status_code=303)
+
+
+@app.get("/documents/{doc_id}/file")
+def document_file(doc_id: int, request: Request, download: int = 0,
+                  db: Session = Depends(get_db),
+                  _=Depends(needs(perms.CLIENTS_VIEW))):
+    """Serve the stored bytes.
+
+    Opening a document is a read of protected information and is logged as one.
+    The Content-Disposition filename is rebuilt from a sanitised name rather
+    than echoed, because a filename is attacker-controlled input and a header is
+    a bad place to discover that.
+    """
+    doc = get_or_404(db, documents.Document, doc_id)
+    me = auth.current_user(request, db)
+    log(db, f"Document opened: {doc.label[:32]}", "document", doc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+
+    disposition = "attachment" if download else "inline"
+    name = documents.download_name(doc)
+    return Response(
+        content=doc.content, media_type=doc.media_type or "application/octet-stream",
+        headers={"Content-Disposition": f'{disposition}; filename="{name}"',
+                 #  Served from our own origin, so a stored SVG or HTML would
+                 #  run as us. Neither is in the allowed list, and this is the
+                 #  second lock on the same door.
+                 "X-Content-Type-Options": "nosniff",
+                 "Content-Security-Policy": "default-src 'none'; img-src 'self'"})
+
+
+@app.post("/documents/{doc_id}/file-to")
+def document_file_to(doc_id: int, request: Request, client_id: str = F(""),
+                     db: Session = Depends(get_db),
+                     _=Depends(needs(perms.CLIENTS_EDIT))):
+    """Attach an unfiled document to a patient, or detach it again."""
+    doc = get_or_404(db, documents.Document, doc_id)
+    me = auth.current_user(request, db)
+    chosen = _int_or_none(client_id)
+    target = db.get(Client, chosen) if chosen else None
+    doc.client_id = target.id if target else None
+    cache.drop("nav:unfiled")
+    log(db, f"Document {'filed' if target else 'unfiled'}: {doc.label[:26]}",
+        "document", doc.id, user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+    request.session["document_note"] = (
+        f"{doc.name} filed to {target.name}." if target
+        else f"{doc.name} is unfiled again.")
+    return RedirectResponse(request.headers.get("referer") or "/documents",
+                            status_code=303)
+
+
+@app.post("/documents/{doc_id}/processed")
+def document_processed(doc_id: int, request: Request,
+                       db: Session = Depends(get_db),
+                       _=Depends(needs(perms.CLIENTS_EDIT))):
+    doc = get_or_404(db, documents.Document, doc_id)
+    me = auth.current_user(request, db)
+    doc.processed = not doc.processed
+    doc.processed_by = (me.name if me else "")[:160] if doc.processed else ""
+    doc.processed_at = datetime.utcnow() if doc.processed else None
+    log(db, f"Document {'processed' if doc.processed else 'reopened'}: "
+            f"{doc.label[:20]}", "document", doc.id,
+        user_id=getattr(me, "id", None))
+    db.commit()
+    return RedirectResponse(request.headers.get("referer") or "/documents",
+                            status_code=303)
+
+
+@app.post("/documents/{doc_id}/delete")
+def document_delete(doc_id: int, request: Request,
+                    db: Session = Depends(get_db),
+                    _=Depends(needs(perms.USERS_MANAGE))):
+    """Delete a document. Deliberately the narrowest permission here.
+
+    Everything else in this module is front-desk work; destroying a received
+    record is not. A misfiled document should be re-filed, not deleted, and the
+    only legitimate deletions are duplicates and things scanned in error.
+    """
+    doc = get_or_404(db, documents.Document, doc_id)
+    me = auth.current_user(request, db)
+    name = doc.name
+    log(db, f"Document deleted: {doc.label[:31]}", "document", doc.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.delete(doc)
+    db.commit()
+    request.session["document_note"] = f"{name} was deleted."
+    return RedirectResponse("/documents", status_code=303)

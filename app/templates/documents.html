@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Documents{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>Documents</div>
+{% endblock %}
+
+{% block full %}
+<div class="wrap" style="max-width:1000px">
+
+{% if note %}
+<div style="background:var(--good-soft);border-left:3px solid var(--good);
+            color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ note }}</div>
+{% endif %}
+{% if error %}
+<div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+            color:var(--bad);padding:12px 15px;margin:0 0 18px;font-size:14.5px">
+  {{ error }}</div>
+{% endif %}
+
+{% if can(user, P.CLIENTS_EDIT) %}
+<div class="panel" style="margin-bottom:22px">
+  <h2>&#8679; Receive a document</h2>
+  <div class="body">
+    <form method="post" action="/documents/upload" enctype="multipart/form-data"
+          style="display:grid;gap:11px">
+      <input type="hidden" name="back" value="/documents?show={{ show }}">
+      <div style="display:flex;gap:11px;flex-wrap:wrap;align-items:end">
+        <label style="flex:2;min-width:230px">File
+          <input type="file" name="file" required style="width:100%"
+                 accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.tif,.tiff,.txt"></label>
+        <label style="flex:1;min-width:150px">What is it
+          <select name="label" style="width:100%">
+            {% for l in labels %}<option>{{ l }}</option>{% endfor %}
+          </select></label>
+      </div>
+      <div style="display:flex;gap:11px;flex-wrap:wrap">
+        <label style="flex:2;min-width:200px">Patient <span class="hint">(leave blank if unknown)</span>
+          <select name="client_id" style="width:100%">
+            <option value="">&mdash; unfiled &mdash;</option>
+            {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select></label>
+        <label style="flex:1;min-width:150px">Received from
+          <input type="text" name="received_from" style="width:100%"
+                 placeholder="e.g. County Hospital"></label>
+      </div>
+      <input type="text" name="notes" placeholder="Note (optional)">
+      <button class="btn btn-green" style="justify-self:start">Store it</button>
+    </form>
+    <p class="hint" style="margin:12px 0 0">
+      PDFs, images and plain text, up to 12&nbsp;MB. The check is on the file's
+      own contents, not its name &mdash; a document renamed to .pdf is still
+      refused if it is not one.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+  <a class="btn btn-sm {{ 'btn-green' if show == 'unfiled' }}"
+     href="/documents?show=unfiled">Unfiled{% if unfiled %} ({{ unfiled }}){% endif %}</a>
+  <a class="btn btn-sm {{ 'btn-green' if show == 'unprocessed' }}"
+     href="/documents?show=unprocessed">Not yet processed</a>
+  <a class="btn btn-sm {{ 'btn-green' if show == 'all' }}"
+     href="/documents?show=all">Everything</a>
+</div>
+
+<div class="panel"><div class="body" style="padding:0">
+  <table class="doc-tbl">
+    <thead><tr>
+      <th>Document</th><th>Patient</th><th class="num">Received</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for d in docs %}
+    <tr>
+      <td>
+        <a href="/documents/{{ d.id }}/file" target="_blank" rel="noopener"><b>{{ d.name }}</b></a>
+        <div class="hint">{{ d.label }} &middot; {{ d.size_human }}
+          {%- if d.received_from %} &middot; from {{ d.received_from }}{% endif %}
+          {%- if d.uploaded_by %} &middot; by {{ d.uploaded_by }}{% endif %}</div>
+        {% if d.notes %}<div class="hint" style="margin-top:3px">{{ d.notes }}</div>{% endif %}
+      </td>
+      <td>
+        {% if d.client %}
+          <a href="/clients/{{ d.client_id }}#documents">{{ d.client.name }}</a>
+        {% elif can(user, P.CLIENTS_EDIT) %}
+          <form class="inline" method="post" action="/documents/{{ d.id }}/file-to">
+            <select name="client_id" onchange="this.form.submit()" style="max-width:190px">
+              <option value="">&mdash; file to &mdash;</option>
+              {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+            </select>
+          </form>
+        {% else %}<span class="tag bad">unfiled</span>{% endif %}
+      </td>
+      <td class="num">{{ d.received_on.strftime('%d %b %Y') }}</td>
+      <td class="act">
+        {% if d.processed %}
+          <span class="tag ok" title="{{ d.processed_by }}">done</span>
+        {% endif %}
+        {% if can(user, P.CLIENTS_EDIT) %}
+        <form class="inline" method="post" action="/documents/{{ d.id }}/processed">
+          <button class="btn btn-sm">{{ 'Reopen' if d.processed else 'Mark done' }}</button>
+        </form>
+        {% endif %}
+        <a class="btn btn-sm" href="/documents/{{ d.id }}/file?download=1">Download</a>
+        {% if can(user, P.USERS_MANAGE) %}
+        <form class="inline" method="post" action="/documents/{{ d.id }}/delete"
+              onsubmit="return confirm('Delete this document permanently?\n\nA misfiled document should be re-filed, not deleted.')">
+          <button class="btn btn-sm">Delete</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="padding:22px 16px">
+      <span class="hint">
+        {% if show == 'unfiled' %}Nothing is unfiled &mdash; every document that
+        has come in is attached to a patient.
+        {% else %}No documents yet.{% endif %}</span>
+    </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<style>
+  .doc-tbl{width:100%;border-collapse:collapse;font-size:14px}
+  .doc-tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.5px;color:var(--ink-3);font-weight:700;padding:11px 14px;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  .doc-tbl td{padding:11px 14px;border-bottom:1px solid var(--rule);
+    vertical-align:top}
+  .doc-tbl tbody tr:last-child td{border-bottom:0}
+  .doc-tbl tbody tr:hover{background:#f7fafa}
+  .doc-tbl .num{white-space:nowrap;width:120px}
+  .doc-tbl .act{text-align:right;white-space:nowrap}
+  .doc-tbl .act form{display:inline-block;margin-left:4px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;
+    border-radius:9px;text-transform:uppercase;letter-spacing:.4px}
+  .tag.ok{background:var(--good-soft);color:var(--good)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  @media (max-width:720px){ .doc-tbl .num{display:none} }
+</style>
+
+</div>
+{% endblock %}

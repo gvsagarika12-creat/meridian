@@ -589,6 +589,7 @@ def log(session, action: str, entity_type: str = "", entity_id: str = "",
 from . import clinical  # noqa: E402,F401
 from . import intakeq  # noqa: E402,F401
 from . import ehr  # noqa: E402,F401
+from . import documents  # noqa: E402,F401
 from . import hospital  # noqa: E402,F401
 from . import trials  # noqa: E402,F401
 from . import schedule  # noqa: E402,F401

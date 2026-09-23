@@ -1,4 +1,5 @@
-"""Create the clinical record tables: encounters, prescriptions, orders, charges.
+"""Create the clinical record tables: encounters, prescriptions, orders,
+charges and documents.
 
     python add_ehr_tables.py                            # this machine
     TARGET_DATABASE_URL=... python add_ehr_tables.py    # the hosted one
@@ -15,7 +16,8 @@ import sys
 
 import sqlalchemy as sa
 
-TABLES = ("encounters", "encounter_addenda", "prescriptions", "orders", "charges")
+TABLES = ("encounters", "encounter_addenda", "prescriptions", "orders",
+          "charges", "documents")
 
 
 def normalise(url: str) -> str:

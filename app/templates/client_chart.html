@@ -138,6 +138,52 @@
       </section>
       {% endif %}
 
+      <section class="card" id="documents">
+        <h2>&#128206; Documents</h2>
+        {% for d in documents %}
+        <div class="line"><span>
+          <a href="/documents/{{ d.id }}/file" target="_blank" rel="noopener">
+            <b>{{ d.name }}</b></a>
+          <span class="hint">&middot; {{ d.label }} &middot; {{ d.size_human }}
+            &middot; {{ d.received_on.strftime('%d %b %Y') }}
+            {%- if d.received_from %} &middot; from {{ d.received_from }}{% endif %}</span>
+        </span>
+          <span>
+            {% if d.processed %}<span class="src-tag synced"
+              title="{{ d.processed_by }}">done</span>{% endif %}
+          </span>
+        </div>
+        {% else %}
+        <p class="hint">Nothing filed to this patient yet.</p>
+        {% endfor %}
+
+        {% if can(user, P.CLIENTS_EDIT) %}
+        <details style="margin-top:13px;border-top:1px solid var(--rule);padding-top:12px">
+          <summary style="cursor:pointer;font-weight:600;font-size:14.5px">
+            &#8679; File a document to {{ client.first_name }}</summary>
+          <form method="post" action="/documents/upload" enctype="multipart/form-data"
+                style="display:grid;gap:9px;margin-top:11px">
+            <input type="hidden" name="client_id" value="{{ client.id }}">
+            <input type="hidden" name="back" value="/clients/{{ client.id }}#documents">
+            <input type="file" name="file" required
+                   accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.tif,.tiff,.txt">
+            <div style="display:flex;gap:9px;flex-wrap:wrap">
+              <select name="label" style="flex:1;min-width:150px">
+                {% for l in doc_labels %}<option>{{ l }}</option>{% endfor %}
+              </select>
+              <input type="text" name="received_from" placeholder="Received from"
+                     style="flex:1;min-width:150px">
+            </div>
+            <button class="btn btn-sm btn-green" style="justify-self:start">
+              Store it</button>
+          </form>
+          <p class="hint" style="margin:9px 0 0">
+            PDFs, images and plain text up to 12&nbsp;MB. Checked by contents,
+            not by filename.</p>
+        </details>
+        {% endif %}
+      </section>
+
       <section class="card" id="notes">
         <h2>&#128221; Clinical notes</h2>
         {% for e in encounters %}

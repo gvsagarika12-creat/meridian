@@ -36,6 +36,9 @@
     <a href="/calendar" class="{{ 'on' if nav=='calendar' }}"><i>▣</i>Calendar
       {% if due %}<b class="count">{{ due }}</b>{% endif %}</a>{% endif %}
 
+    {% if can(user, P.CLIENTS_VIEW) %}
+    <a href="/documents" class="{{ 'on' if nav=='documents' }}"><i>&#128206;</i>Documents
+      {% if unfiled_docs %}<b class="count">{{ unfiled_docs }}</b>{% endif %}</a>{% endif %}
     {% if can(user, P.CLINICAL_EDIT) %}
     <a href="/results" class="{{ 'on' if nav=='results' }}"><i>&#9673;</i>Results
       {% if unreviewed %}<b class="count">{{ unreviewed }}</b>{% endif %}</a>{% endif %}
