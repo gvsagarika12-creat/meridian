@@ -1,0 +1,32 @@
+{#  The report tree. One partial, so every report page has the same rail and
+    adding a report means adding one link here, not remembering to update it
+    on five separate pages.  #}
+<aside style="min-width:190px">
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:0 0 6px;font-weight:700">Patients</div>
+  <a href="/reports/patients" class="rep-link {{ 'on' if report=='patients' }}">All Patients</a>
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:16px 0 6px;font-weight:700">Appointments</div>
+  <a href="/reports/appointments" class="rep-link {{ 'on' if report=='appointments' }}">All Appointments</a>
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:16px 0 6px;font-weight:700">Notes</div>
+  <a href="/reports/notes" class="rep-link {{ 'on' if report=='notes' }}">Unsigned Notes</a>
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:16px 0 6px;font-weight:700">Encounters</div>
+  <a href="/reports/encounters" class="rep-link {{ 'on' if report=='encounters' }}">All Encounters</a>
+
+  {% if can(user, P.BILLING_EDIT) %}
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:16px 0 6px;font-weight:700">Claims</div>
+  <a href="/billing/insurance" class="rep-link">Insurance Collections</a>
+  {% endif %}
+</aside>
+<style>
+  .rep-link{display:block;padding:6px 9px;margin-bottom:2px;border-radius:6px;
+    font-size:14px;color:var(--ink-2);text-decoration:none}
+  .rep-link:hover{background:#eef2f2;text-decoration:none}
+  .rep-link.on{background:var(--rail);color:#fff;font-weight:600}
+</style>

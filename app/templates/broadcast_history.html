@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Broadcast History{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span>Broadcast history</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:900px">
+{% include "_tbl.html" %}
+
+<div style="display:flex;gap:8px;margin-bottom:18px">
+  <a class="btn btn-sm" href="/broadcasts">Send Broadcast</a>
+  <a class="btn btn-sm btn-green" href="/broadcasts/history">Broadcast History</a>
+</div>
+
+{% if note %}<div style="background:var(--good-soft);border-left:3px solid var(--good);
+  color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">{{ note }}</div>{% endif %}
+
+<div class="panel"><div class="body" style="padding:0">
+  <table class="t">
+    <thead><tr><th>Sent</th><th>Message</th><th>Channel</th><th>Filter</th>
+      <th class="num">Sent</th><th class="num">Skipped</th><th class="num">Failed</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.sent_at.strftime('%d %b %Y %H:%M') }}<div class="hint">{{ r.sent_by }}</div></td>
+      <td>{{ r.preview }}{{ '…' if r.body|length > 140 }}</td>
+      <td>{{ r.channel.value }}</td>
+      <td class="hint">
+        {{ r.filter_trial.name if r.filter_trial else 'all trials' }}
+        {%- if r.filter_verdict %} &middot; {{ r.filter_verdict }}{% endif %}
+        {%- if r.filter_form_status %} &middot; {{ r.filter_form_status }}{% endif %}</td>
+      <td class="num" style="color:var(--good)">{{ r.sent_count }}</td>
+      <td class="num">{{ r.skipped_count }}</td>
+      <td class="num" style="color:{{ 'var(--bad)' if r.failed_count else 'inherit' }}">{{ r.failed_count }}</td>
+      <td class="act"><a class="btn btn-sm" href="/broadcasts/{{ r.id }}">Detail</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" style="padding:20px 16px"><span class="hint">
+      No broadcasts sent yet.</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+</div>
+{% endblock %}

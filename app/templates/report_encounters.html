@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}All Encounters report{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/reports">Reports</a>
+  <span class="sep">&rsaquo;</span>All Encounters</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1100px">
+{% include "_tbl.html" %}
+<div style="display:flex;gap:22px;align-items:flex-start">
+  {% include "_report_nav.html" %}
+  <div style="flex:1;min-width:0">
+
+  <div class="panel"><div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Seen</th><th>Patient</th><th>Provider</th><th>Template</th>
+        <th>Reason</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for e in encounters %}
+      <tr>
+        <td>{{ e.seen_on.strftime('%d %b %Y') }}</td>
+        <td><a href="/clients/{{ e.client_id }}">{{ e.client.name if e.client }}</a></td>
+        <td>{{ e.provider.name if e.provider else '—' }}</td>
+        <td>{{ e.template }}</td>
+        <td>{{ e.reason or '—' }}</td>
+        <td>
+          {% if e.is_signed %}
+          <span class="pill ok" title="{{ e.signed_by }}">signed</span>
+          {% else %}<span class="pill grey">draft</span>{% endif %}
+        </td>
+        <td class="act"><a class="btn btn-sm" href="/encounters/{{ e.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="padding:20px 16px"><span class="hint">
+        No encounters yet.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  <p class="hint" style="margin-top:12px">{{ encounters|length }} encounter{{ 's' if encounters|length != 1 }}
+    shown, most recent first (limit 500).</p>
+  </div>
+</div>
+</div>
+{% endblock %}

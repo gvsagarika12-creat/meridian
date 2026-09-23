@@ -42,6 +42,7 @@ from . import credentials
 from . import cache
 from . import integrations
 from . import intakeq
+from . import broadcasts
 from . import documents
 from . import ehr
 from . import simulation
@@ -141,6 +142,7 @@ templates.env.globals["sections_for"] = lambda name: ehr.TEMPLATES.get(
     name, ehr.TEMPLATES["Free text"])
 templates.env.globals["today"] = date.today
 templates.env.globals["COMMON_CPT"] = ehr.COMMON_CPT
+templates.env.globals["CriterionKind"] = trials.CriterionKind
 # The labels IntakeQ shows for each type, kept out of the enum so the
 # stored value stays a stable identifier.
 templates.env.globals["prefill_for"] = prefill_for
@@ -3627,3 +3629,263 @@ def billing_pay_run(request: Request, client_id: str = F(""),
                    "reports a decline. Nothing was recorded."),
     }
     return RedirectResponse("/billing/pay", status_code=303)
+
+
+# ------------------------------------------------------------------ reports
+#
+# Read-only cross-cutting views. Every one of these is a query that already
+# exists somewhere else in the app, reassembled as a list rather than a chart -
+# the point of a report is that it is the same facts, seen across everybody
+# instead of one patient at a time.
+
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_home(request: Request, _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    return RedirectResponse("/reports/patients", status_code=303)
+
+
+def _last_contact_for_all(db) -> dict[int, datetime]:
+    """The most recent contact date for every patient, in three queries total.
+
+    A per-patient version of this - one query each for submissions, messages
+    and appointments - is the exact N+1 shape the caseload screen had before
+    records_for_many fixed it: seven patients hides it, a real practice's worth
+    does not. So this reads each table once, grouped by client, and folds the
+    three maxima together in Python.
+
+    Not a stored field either way - a stored "last contact" drifts the moment
+    somebody adds a new kind of contact and forgets to update it there too.
+    """
+    latest: dict[int, datetime] = {}
+
+    def fold(client_id, when):
+        if client_id is not None and when is not None:
+            if client_id not in latest or when > latest[client_id]:
+                latest[client_id] = when
+
+    for client_id, when in (db.query(Submission.client_id,
+                                     func.max(Submission.sent_at))
+                            .group_by(Submission.client_id).all()):
+        fold(client_id, when)
+    for client_id, when in (db.query(MessageLog.client_id, func.max(MessageLog.at))
+                            .group_by(MessageLog.client_id).all()):
+        fold(client_id, when)
+    for client_id, when in (db.query(schedule.Appointment.client_id,
+                                     func.max(schedule.Appointment.on_day))
+                            .group_by(schedule.Appointment.client_id).all()):
+        if when is not None:
+            fold(client_id, datetime.combine(when, datetime.min.time()))
+    return latest
+
+
+@app.get("/reports/patients", response_class=HTMLResponse)
+def report_patients(request: Request, trial_id: str = "", verdict: str = "",
+                    db: Session = Depends(get_db),
+                    _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    """Every patient, their trial screening verdict, and who is looking after them.
+
+    The same batching as My Patients and the trial detail screen - eager-load
+    what the screening reads and fetch the whole archive in one query - because
+    this is the same N+1 shape at the same scale, and the fix that mattered
+    there matters here for the same reason.
+    """
+    clients = (db.query(Client).filter_by(archived=False)
+               .options(selectinload(Client.medications),
+                        selectinload(Client.submissions_list)
+                        .selectinload(Submission.answers)
+                        .joinedload(Answer.question),
+                        joinedload(Client.provider))
+               .order_by(Client.last_name).all())
+    trials_all = db.query(Trial).order_by(Trial.is_active.desc(), Trial.name).all()
+    chosen = db.get(Trial, _int_or_none(trial_id)) if trial_id else (
+        next((t for t in trials_all if t.is_active), trials_all[0] if trials_all else None))
+
+    archives = records_for_many(db, (c.hospital_id for c in clients))
+    contacts = _last_contact_for_all(db)
+    rows = []
+    for c in clients:
+        screening = (trials.evaluate(c, chosen, archives.get(c.hospital_id or 0, []))
+                     if chosen else None)
+        v = screening.verdict if screening else "No trial selected"
+        if verdict and v != verdict:
+            continue
+        rows.append({"client": c, "verdict": v, "screening": screening,
+                    "last_contact": contacts.get(c.id)})
+
+    return render("report_patients.html", ctx(
+        request, db, nav="reports", report="patients", rows=rows,
+        trials_all=trials_all, chosen=chosen, verdict=verdict))
+
+
+@app.get("/reports/appointments", response_class=HTMLResponse)
+def report_appointments(request: Request, status: str = "",
+                        db: Session = Depends(get_db),
+                        _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    rows = (db.query(schedule.Appointment)
+            .options(joinedload(schedule.Appointment.client),
+                     joinedload(schedule.Appointment.provider))
+            .order_by(schedule.Appointment.on_day.desc()))
+    if status:
+        try:
+            rows = rows.filter(schedule.Appointment.status == schedule.Attendance(status))
+        except ValueError:
+            pass
+    return render("report_appointments.html", ctx(
+        request, db, nav="reports", report="appointments",
+        appointments=rows.limit(500).all(), status=status,
+        statuses=list(schedule.Attendance)))
+
+
+@app.get("/reports/notes", response_class=HTMLResponse)
+def report_unsigned_notes(request: Request, db: Session = Depends(get_db),
+                          _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Every clinical note still in draft.
+
+    This is a genuine clinical-risk list, not a housekeeping one: a note left
+    unsigned is a visit with no record a court, a payer or a colleague covering
+    for the prescriber can rely on. Oldest first, because the ones that matter
+    are the ones somebody has been meaning to get back to for weeks.
+    """
+    rows = (db.query(ehr.Encounter)
+            .filter(ehr.Encounter.status == ehr.NoteStatus.draft)
+            .options(joinedload(ehr.Encounter.client),
+                     joinedload(ehr.Encounter.provider))
+            .order_by(ehr.Encounter.seen_on).all())
+    return render("report_notes.html", ctx(
+        request, db, nav="reports", report="notes", encounters=rows))
+
+
+@app.get("/reports/encounters", response_class=HTMLResponse)
+def report_encounters(request: Request, db: Session = Depends(get_db),
+                      _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    rows = (db.query(ehr.Encounter)
+            .options(joinedload(ehr.Encounter.client),
+                     joinedload(ehr.Encounter.provider))
+            .order_by(ehr.Encounter.seen_on.desc()).limit(500).all())
+    return render("report_encounters.html", ctx(
+        request, db, nav="reports", report="encounters", encounters=rows))
+
+
+# ------------------------------------------------------------------ broadcasts
+#
+# A message to more than one patient at once. See app/broadcasts.py for why
+# the safeguards here are entirely about the audience, not the wording - the
+# filter is resolved fresh at send time, never trusted from a hidden field,
+# and every recipient goes through the same consent gate a single-patient send
+# already uses.
+
+
+@app.get("/broadcasts", response_class=HTMLResponse)
+def broadcasts_new(request: Request, db: Session = Depends(get_db),
+                   _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    return render("broadcast_new.html", ctx(
+        request, db, nav="broadcasts",
+        trials_all=db.query(Trial).order_by(Trial.is_active.desc(), Trial.name).all(),
+        verdicts=broadcasts.VERDICTS, form_statuses=broadcasts.FORM_STATUS,
+        max_body=broadcasts.MAX_BODY, preview=None,
+        error=request.session.pop("broadcast_error", "")))
+
+
+def _broadcast_form(form) -> dict:
+    return {
+        "subject": (form.get("subject") or "").strip()[:200],
+        "body": (form.get("body") or "").strip()[:broadcasts.MAX_BODY],
+        "channel": form.get("channel") or "email",
+        "trial_id": form.get("trial_id") or "",
+        "verdict": form.get("verdict") or "",
+        "form_status": form.get("form_status") or "",
+    }
+
+
+@app.post("/broadcasts/preview")
+async def broadcasts_preview(request: Request, db: Session = Depends(get_db),
+                             _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    """Resolve the filter and show who it matches. Nothing is sent."""
+    form = await request.form()
+    values = _broadcast_form(form)
+    if not values["body"]:
+        request.session["broadcast_error"] = "Write a message first."
+        return RedirectResponse("/broadcasts", status_code=303)
+
+    matched = broadcasts.matching_clients(
+        db, trial_id=_int_or_none(values["trial_id"]),
+        verdict=values["verdict"], form_status=values["form_status"])
+
+    return render("broadcast_new.html", ctx(
+        request, db, nav="broadcasts", values=values,
+        trials_all=db.query(Trial).order_by(Trial.is_active.desc(), Trial.name).all(),
+        verdicts=broadcasts.VERDICTS, form_statuses=broadcasts.FORM_STATUS,
+        max_body=broadcasts.MAX_BODY, preview=matched,
+        error=""))
+
+
+@app.post("/broadcasts/send")
+async def broadcasts_send(request: Request, db: Session = Depends(get_db),
+                          _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    """Resolve the filter AGAIN and send for real.
+
+    Never trusts the count a preview showed: that count was a string in HTML
+    by the time this button was pressed, and re-running the same filter is the
+    only way the fifty people who receive a message are the fifty who were
+    actually reviewed.
+    """
+    form = await request.form()
+    values = _broadcast_form(form)
+    me = auth.current_user(request, db)
+    if not values["body"]:
+        request.session["broadcast_error"] = "Write a message first."
+        return RedirectResponse("/broadcasts", status_code=303)
+
+    try:
+        channel = broadcasts.Channel(values["channel"])
+    except ValueError:
+        channel = broadcasts.Channel.email
+
+    matched = broadcasts.matching_clients(
+        db, trial_id=_int_or_none(values["trial_id"]),
+        verdict=values["verdict"], form_status=values["form_status"])
+
+    record = broadcasts.Broadcast(
+        subject=values["subject"], body=values["body"], channel=channel,
+        filter_trial_id=_int_or_none(values["trial_id"]),
+        filter_verdict=values["verdict"], filter_form_status=values["form_status"],
+        recipient_count=len(matched), sent_by=(me.name if me else "")[:160])
+    db.add(record)
+    db.flush()
+
+    broadcasts.send(db, record, matched, request=request, config=config.load())
+    log(db, f"Broadcast prepared ({len(matched)} matched)", "broadcast", record.id,
+        user_id=getattr(me, "id", None), ip=client_ip(request))
+    db.commit()
+
+    request.session["broadcast_note"] = (
+        f"{record.sent_count} sent, {record.skipped_count} skipped "
+        f"(no address or no consent), {record.failed_count} failed, "
+        f"of {record.recipient_count} matched.")
+    return RedirectResponse(f"/broadcasts/{record.id}", status_code=303)
+
+
+@app.get("/broadcasts/history", response_class=HTMLResponse)
+def broadcasts_history(request: Request, db: Session = Depends(get_db),
+                       _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    rows = (db.query(broadcasts.Broadcast)
+            .options(joinedload(broadcasts.Broadcast.filter_trial))
+            .order_by(broadcasts.Broadcast.id.desc()).all())
+    return render("broadcast_history.html", ctx(
+        request, db, nav="broadcasts", rows=rows,
+        note=request.session.pop("broadcast_note", "")))
+
+
+@app.get("/broadcasts/{broadcast_id}", response_class=HTMLResponse)
+def broadcast_detail(broadcast_id: int, request: Request,
+                     db: Session = Depends(get_db),
+                     _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    record = (db.query(broadcasts.Broadcast)
+              .options(selectinload(broadcasts.Broadcast.entries)
+                       .joinedload(MessageLog.client))
+              .filter_by(id=broadcast_id).first())
+    if record is None:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    return render("broadcast_detail.html", ctx(
+        request, db, nav="broadcasts", record=record,
+        note=request.session.pop("broadcast_note", "")))

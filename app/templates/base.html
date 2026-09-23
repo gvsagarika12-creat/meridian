@@ -50,6 +50,7 @@
     <a href="/records" class="{{ 'on' if nav=='records' }}"><i>▤</i>Records</a>
     <a href="/archive" class="{{ 'on' if nav=='archive' }}"><i>⌸</i>Archive</a>
     <a href="/trials" class="{{ 'on' if nav=='trials' }}"><i>◈</i>Trials</a>
+    <a href="/reports" class="{{ 'on' if nav=='reports' }}"><i>▥</i>Reports</a>
     {% endif %}
 
     {% if can(user, P.SUBMISSIONS_VIEW) or can(user, P.EVENTS_VIEW)
@@ -57,6 +58,8 @@
     <div class="rail-head">Practice</div>{% endif %}
     {% if can(user, P.SUBMISSIONS_VIEW) %}
     <a href="/outbox" class="{{ 'on' if nav=='outbox' }}"><i>✉</i>Outbox</a>{% endif %}
+    {% if can(user, P.SUBMISSIONS_SEND) %}
+    <a href="/broadcasts" class="{{ 'on' if nav=='broadcasts' }}"><i>📣</i>Broadcasts</a>{% endif %}
     {% if can(user, P.EVENTS_VIEW) %}
     <a href="/events" class="{{ 'on' if nav=='events' }}"><i>⎘</i>Activity</a>{% endif %}
     {% if can(user, P.USERS_MANAGE) %}

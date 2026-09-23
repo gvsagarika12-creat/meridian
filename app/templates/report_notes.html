@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Unsigned Notes{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/reports">Reports</a>
+  <span class="sep">&rsaquo;</span>Unsigned Notes</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1100px">
+{% include "_tbl.html" %}
+<div style="display:flex;gap:22px;align-items:flex-start">
+  {% include "_report_nav.html" %}
+  <div style="flex:1;min-width:0">
+
+  <div style="background:#fdf2dc;border-left:3px solid #c98a12;color:#7a5200;
+              padding:13px 16px;margin:0 0 18px;font-size:14.5px">
+    A note left unsigned is a visit with no record a court, a payer, or a
+    colleague covering for the prescriber can rely on. Oldest first, because
+    these are the ones somebody has been meaning to get back to.
+  </div>
+
+  <div class="panel"><div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Seen</th><th>Patient</th><th>Provider</th><th>Template</th>
+        <th>Reason</th><th></th></tr></thead>
+      <tbody>
+      {% for e in encounters %}
+      <tr>
+        <td>
+          <span class="pill {{ 'bad' if (today() - e.seen_on).days > 7 else 'wait' }}"
+            >{{ (today() - e.seen_on).days }} days</span>
+          <div class="hint" style="margin-top:3px">{{ e.seen_on.strftime('%d %b %Y') }}</div>
+        </td>
+        <td><a href="/clients/{{ e.client_id }}">{{ e.client.name if e.client }}</a></td>
+        <td>{{ e.provider.name if e.provider else '—' }}</td>
+        <td>{{ e.template }}</td>
+        <td>{{ e.reason or '—' }}</td>
+        <td class="act"><a class="btn btn-sm btn-green" href="/encounters/{{ e.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:20px 16px"><span class="hint">
+        Nothing unsigned. Every note has been signed.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  </div>
+</div>
+</div>
+{% endblock %}

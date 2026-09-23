@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}All Appointments report{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/reports">Reports</a>
+  <span class="sep">&rsaquo;</span>All Appointments</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1100px">
+{% include "_tbl.html" %}
+<div style="display:flex;gap:22px;align-items:flex-start">
+  {% include "_report_nav.html" %}
+  <div style="flex:1;min-width:0">
+
+  <form method="get" action="/reports/appointments" style="margin-bottom:16px">
+    <select name="status" onchange="this.form.submit()" style="min-width:170px">
+      <option value="">any status</option>
+      {% for s in statuses %}
+      <option value="{{ s.value }}" {{ 'selected' if s.value == status }}>{{ s.value }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <div class="panel"><div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Date</th><th>Patient</th><th>Provider</th><th>Type</th>
+        <th>Status</th><th>Location</th></tr></thead>
+      <tbody>
+      {% for a in appointments %}
+      <tr>
+        <td>{{ a.on_day.strftime('%d %b %Y') }}{{ ' ' ~ a.at_time if a.at_time }}</td>
+        <td><a href="/clients/{{ a.client_id }}">{{ a.client.name if a.client }}</a></td>
+        <td>{{ a.provider.name if a.provider else 'Unassigned' }}</td>
+        <td>{{ a.kind }}</td>
+        <td><span class="pill {{ 'ok' if a.status.value == 'attended'
+          else 'bad' if a.status.value in ('cancelled','no show') else 'grey' }}"
+          >{{ a.status.value }}</span></td>
+        <td>{{ a.location or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:20px 16px"><span class="hint">
+        No appointments{{ ' with that status' if status }}.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  <p class="hint" style="margin-top:12px">{{ appointments|length }} appointment{{ 's' if appointments|length != 1 }}
+    shown, most recent first (limit 500).</p>
+  </div>
+</div>
+</div>
+{% endblock %}

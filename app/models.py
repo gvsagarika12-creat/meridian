@@ -506,6 +506,12 @@ class MessageLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id"), nullable=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
+    # Which broadcast this attempt belongs to, for the ones sent to many
+    # patients at once. Null for an ordinary single-patient form-link send.
+    # A real column rather than matching rows by their timestamp, which would
+    # blend two broadcasts sent minutes apart into each other's history.
+    broadcast_id: Mapped[int | None] = mapped_column(
+        ForeignKey("broadcasts.id"), nullable=True, index=True)
     channel: Mapped[str] = mapped_column(String(16))
     recipient: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32))        # sent | failed | skipped
@@ -590,6 +596,7 @@ from . import clinical  # noqa: E402,F401
 from . import intakeq  # noqa: E402,F401
 from . import ehr  # noqa: E402,F401
 from . import documents  # noqa: E402,F401
+from . import broadcasts  # noqa: E402,F401
 from . import hospital  # noqa: E402,F401
 from . import trials  # noqa: E402,F401
 from . import schedule  # noqa: E402,F401

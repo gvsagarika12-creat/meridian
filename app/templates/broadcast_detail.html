@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Broadcast detail{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/broadcasts/history">Broadcast history</a>
+  <span class="sep">&rsaquo;</span>Detail</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:800px">
+{% include "_tbl.html" %}
+
+{% if note %}<div style="background:var(--good-soft);border-left:3px solid var(--good);
+  color:var(--good);padding:12px 15px;margin:0 0 18px;font-size:14.5px">{{ note }}</div>{% endif %}
+
+<div class="panel" style="margin-bottom:20px">
+  <h2>Sent {{ record.sent_at.strftime('%d %b %Y %H:%M') }} UTC by {{ record.sent_by }}</h2>
+  <div class="body">
+    <p style="white-space:pre-wrap;background:#f7f9f9;padding:13px 15px;
+              border-radius:8px;margin:0 0 14px">{{ record.body }}</p>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
+      <div><span class="hint">Channel</span><br><b>{{ record.channel.value }}</b></div>
+      <div><span class="hint">Matched</span><br><b>{{ record.recipient_count }}</b></div>
+      <div><span class="hint">Sent</span><br><b style="color:var(--good)">{{ record.sent_count }}</b></div>
+      <div><span class="hint">Skipped</span><br><b>{{ record.skipped_count }}</b></div>
+      <div><span class="hint">Failed</span><br><b style="color:{{ 'var(--bad)' if record.failed_count else 'inherit' }}">{{ record.failed_count }}</b></div>
+    </div>
+    <p class="hint" style="margin-top:14px">
+      Filter: {{ record.filter_trial.name if record.filter_trial else 'all trials' }}
+      {%- if record.filter_verdict %} &middot; {{ record.filter_verdict }}{% endif %}
+      {%- if record.filter_form_status %} &middot; {{ record.filter_form_status }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Every attempt</h2>
+  <div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Patient</th><th>Channel</th><th>Result</th><th>Detail</th></tr></thead>
+      <tbody>
+      {% for e in record.entries %}
+      <tr>
+        <td>{{ e.client.name if e.client else '—' }}</td>
+        <td>{{ e.channel }}</td>
+        <td><span class="pill {{ 'ok' if e.status == 'sent'
+          else 'bad' if e.status == 'failed' else 'grey' }}">{{ e.status }}</span></td>
+        <td class="hint">{{ e.detail or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="padding:16px"><span class="hint">No attempts recorded.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+{% endblock %}

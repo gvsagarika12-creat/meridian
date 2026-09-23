@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}All Patients report{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/reports">Reports</a>
+  <span class="sep">&rsaquo;</span>All Patients</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1180px">
+{% include "_tbl.html" %}
+<div style="display:flex;gap:22px;align-items:flex-start">
+  {% include "_report_nav.html" %}
+  <div style="flex:1;min-width:0">
+
+  <form method="get" action="/reports/patients"
+        style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px">
+    <select name="trial_id" onchange="this.form.submit()" style="min-width:220px">
+      {% for t in trials_all %}
+      <option value="{{ t.id }}" {{ 'selected' if chosen and t.id == chosen.id }}>
+        {{ t.name }}{{ ' (closed)' if not t.is_active }}</option>
+      {% endfor %}
+    </select>
+    <select name="verdict" onchange="this.form.submit()" style="min-width:170px">
+      <option value="">any verdict</option>
+      {% for v in ['Looks eligible','Needs review','Not eligible','No criteria'] %}
+      <option value="{{ v }}" {{ 'selected' if v == verdict }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+    {% if verdict %}<a class="btn btn-sm" href="/reports/patients?trial_id={{ chosen.id if chosen }}">Clear verdict</a>{% endif %}
+  </form>
+
+  <div class="panel"><div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr>
+        <th>Status</th><th>Patient</th><th>DOB</th><th>Provider</th>
+        <th>Screening</th><th>Source</th><th class="num">Last contact</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><span class="pill {{ 'ok' if r.verdict == 'Looks eligible'
+          else 'bad' if r.verdict == 'Not eligible'
+          else 'wait' if r.verdict == 'Needs review' else 'grey' }}"
+          >{{ r.verdict }}</span></td>
+        <td><a href="/clients/{{ r.client.id }}"><b>{{ r.client.name }}</b></a>
+          {% if r.client.hospital_id %}<div class="hint">no. {{ r.client.hospital_id }}</div>{% endif %}</td>
+        <td>{{ r.client.dob.strftime('%d %b %Y') if r.client.dob else '—' }}</td>
+        <td>{{ r.client.provider.name if r.client.provider else 'Unassigned' }}</td>
+        <td>
+          {% if r.screening %}
+          {% set inc = r.screening.tally(CriterionKind.inclusion) %}
+          {% set exc = r.screening.tally(CriterionKind.exclusion) %}
+          <span class="hint">{{ inc[0] }}/{{ inc[1] }} inclusion &middot;
+            {{ exc[0] }}/{{ exc[1] }} exclusion</span>
+          {% else %}<span class="hint">&mdash;</span>{% endif %}
+        </td>
+        <td><span class="hint">{{ SOURCE.get(r.client.source, r.client.source or 'entered here') }}</span></td>
+        <td class="num">{{ r.last_contact.strftime('%d %b %Y') if r.last_contact else '—' }}</td>
+        <td class="act"><a class="btn btn-sm" href="/clients/{{ r.client.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="padding:20px 16px"><span class="hint">
+        No patients{{ ' with that verdict' if verdict }}.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  <p class="hint" style="margin-top:12px">{{ rows|length }} patient{{ 's' if rows|length != 1 }}
+    {%- if chosen %} screened against {{ chosen.name }}{% endif %}.</p>
+  </div>
+</div>
+</div>
+{% endblock %}
