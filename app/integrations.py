@@ -142,6 +142,19 @@ BY_KEY = {c.key: c for c in CONNECTIONS}
 
 def check_intakeq(db=None) -> Result:
     """Ask IntakeQ for one questionnaire. Any answer proves the key works."""
+    from . import simulation
+
+    #  Answered before the credential check, not after. Demonstration mode
+    #  exists precisely for the situation where no key has been issued yet;
+    #  refusing for want of one would make it useless at the only time it is
+    #  needed.
+    if simulation.enabled(db):
+        forms = json.loads(simulation.intakeq_response(
+            "https://intakeq.com/api/v1/questionnaires") or b"[]")
+        return Result(True, f"Simulated. {len(forms)} questionnaire(s) answered.",
+                      "Demonstration mode - nothing left this machine. "
+                      + ", ".join(str(f.get("Name", "?")) for f in forms[:5]))
+
     key = creds.resolve(db, "INTAKEQ_API_KEY")
     if not key:
         return Result(False, "No API key set.",
@@ -154,8 +167,15 @@ def check_intakeq(db=None) -> Result:
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read(200_000)
         forms = json.loads(body or b"[]")
+        names = ", ".join(str(f.get("Name", "?")) for f in forms[:5])
+        from . import simulation
+
+        if simulation.enabled(db):
+            return Result(True,
+                          f"Simulated. {len(forms)} questionnaire(s) answered.",
+                          "Demonstration mode - nothing left this machine. " + names)
         return Result(True, f"Connected. {len(forms)} questionnaire(s) visible.",
-                      ", ".join(str(f.get("Name", "?")) for f in forms[:5]))
+                      names)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             return Result(False, "IntakeQ rejected the key.",

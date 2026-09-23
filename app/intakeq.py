@@ -224,10 +224,12 @@ class Api:
     request is deliberate: an un-counted request is how a cap gets broken.
     """
 
-    def __init__(self, key: str, run: ImportRun, budget: Budget):
+    def __init__(self, key: str, run: ImportRun, budget: Budget,
+                 simulated: bool = False):
         self.key = key
         self.run = run
         self.budget = budget
+        self.simulated = simulated
         self._last_call = 0.0
 
     def _spend(self) -> None:
@@ -259,6 +261,14 @@ class Api:
             clean = {k: v for k, v in params.items() if v not in ("", None)}
             if clean:
                 url += "?" + urllib.parse.urlencode(clean)
+        #  The simulation seam. Everything above this line is the production
+        #  path - the URL, the paging parameters, the quota already spent - so
+        #  a demonstration exercises the real client and not a stand-in.
+        if self.simulated:
+            from . import simulation
+
+            return simulation.intakeq_response(url)
+
         request = urllib.request.Request(
             url, headers={"X-Auth-Key": self.key, "Accept": "application/json"})
         try:
@@ -287,6 +297,12 @@ class Api:
         #  record takes the process with it.
         return self._open(f"/intakes/{urllib.parse.quote(intake_id)}/pdf",
                           limit=25_000_000)
+
+
+def simulated(db) -> bool:
+    from . import simulation
+
+    return simulation.enabled(db)
 
 
 def api_key(db) -> str:
@@ -588,14 +604,15 @@ def run_slice(db, run: ImportRun, budget: Budget | None = None) -> ImportRun:
     if run.status != "running":
         return run
 
-    key = api_key(db)
+    sim = simulated(db)
+    key = api_key(db) or ("SIMULATED-NOT-A-REAL-KEY" if sim else "")
     if not key:
         run.status = "failed"
         run.message = ("No IntakeQ API key. Add INTAKEQ_API_KEY on the "
                        "Connections screen, then start the import again.")
         return run
 
-    api = Api(key, run, budget)
+    api = Api(key, run, budget, sim)
     try:
         while not budget.spent and run.status == "running":
             if run.stage == "clients":
@@ -658,14 +675,15 @@ def fetch_pdf(db, intake: ImportedIntake) -> bytes | None:
     if intake.have_pdf:
         return intake.pdf
 
-    key = api_key(db)
+    sim = simulated(db)
+    key = api_key(db) or ("SIMULATED-NOT-A-REAL-KEY" if sim else "")
     if not key:
         intake.pdf_error = "No IntakeQ API key is configured."
         return None
 
     run = latest_run(db) or begin(db)
     try:
-        body = Api(key, run, Budget(requests=1, seconds=30)).pdf(
+        body = Api(key, run, Budget(requests=1, seconds=30), sim).pdf(
             intake.intakeq_intake_id)
     except (QuotaSpent, Refused) as exc:
         intake.pdf_error = str(exc)[:255]
@@ -698,13 +716,14 @@ def preview(db, pages: int = 1) -> dict:
     out of them, and which of our fields came back empty. A blank column is
     obvious here and invisible after a backfill.
     """
-    key = api_key(db)
+    sim = simulated(db)
+    key = api_key(db) or ("SIMULATED-NOT-A-REAL-KEY" if sim else "")
     if not key:
         return {"ok": False, "error": "No IntakeQ API key is configured."}
 
     run = ImportRun(stage="preview", status="running")
-    api = Api(key, run, Budget(requests=2 * pages, seconds=60))
-    out = {"ok": True, "requests_used": 0, "clients": [], "intakes": [],
+    api = Api(key, run, Budget(requests=2 * pages, seconds=60), sim)
+    out = {"ok": True, "simulated": sim, "requests_used": 0, "clients": [], "intakes": [],
            "client_keys": [], "intake_keys": [], "blank_fields": {}}
     try:
         rows = api.json("/clients", {"page": 1, "includeProfile": "true"})

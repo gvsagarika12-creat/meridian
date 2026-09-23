@@ -138,6 +138,30 @@
       </section>
       {% endif %}
 
+      {% if can(user, P.CLINICAL_EDIT) %}
+      <section class="card" id="tebra">
+        <h2>&#129525; Tebra chart</h2>
+        {% if client.tebra_patient_id %}
+        <div class="line"><span>
+          <b>Chart {{ client.tebra_patient_id }}</b>
+          <span class="hint">&middot; this patient exists in Tebra</span></span>
+          <span class="src-tag synced">pushed</span></div>
+        <p class="hint" style="margin:10px 0 0">
+          Pushed once and never again &mdash; the chart id above is checked
+          before any further attempt, because two charts for one person is a
+          failure nobody notices until the records disagree.</p>
+        {% else %}
+        <p class="hint" style="margin:0 0 12px">
+          No Tebra chart yet. Creating one sends this patient's name, date of
+          birth and contact details to Tebra and records the chart id here, so
+          completed paperwork can be filed against it later.</p>
+        <form class="inline" method="post" action="/clients/{{ client.id }}/tebra">
+          <button class="btn btn-sm btn-green">Create the chart in Tebra</button>
+        </form>
+        {% endif %}
+      </section>
+      {% endif %}
+
       <section class="card" id="archive">
         <h2>&#127973; Hospital archive</h2>
 

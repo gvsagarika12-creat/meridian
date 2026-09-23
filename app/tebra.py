@@ -187,18 +187,34 @@ class Credentials:
                  ("TEBRA_PASSWORD", self.password)) if not value]
 
 
+#  What a simulated run uses when nothing has been issued yet. Deliberately
+#  legible rather than realistic: anyone who sees this value in a log or on a
+#  screen should immediately know it is not a credential.
+PLACEHOLDER = "SIMULATED-NOT-A-REAL-CREDENTIAL"
+
+
 def credentials_from(db) -> Credentials:
     #  Imported here, not at module scope: credentials imports models, and models
     #  imports this module's siblings. A top-level import closes that loop.
     from . import credentials as creds
 
-    return Credentials(
+    found = Credentials(
         customer_key=creds.resolve(db, "TEBRA_CUSTOMER_KEY"),
         user=creds.resolve(db, "TEBRA_USER"),
         password=creds.resolve(db, "TEBRA_PASSWORD"),
         practice_id=creds.resolve(db, "TEBRA_PRACTICE_ID"),
         practice_name=creds.resolve(db, "TEBRA_PRACTICE_NAME"),
     )
+    from . import simulation
+
+    if simulation.enabled(db) and not found.complete:
+        found = Credentials(
+            customer_key=found.customer_key or PLACEHOLDER,
+            user=found.user or PLACEHOLDER,
+            password=found.password or PLACEHOLDER,
+            practice_id=found.practice_id or "SIM-PRACTICE-1",
+            practice_name=found.practice_name or "Meridian (simulated)")
+    return found
 
 
 @dataclass
@@ -214,7 +230,12 @@ class Call:
 class Tebra:
     """A SOAP client that reports what happened rather than what was attempted."""
 
-    def __init__(self, creds: Credentials, endpoint: str = ENDPOINT):
+    def __init__(self, creds: Credentials, endpoint: str = ENDPOINT,
+                 simulated: bool = False):
+        self.simulated = simulated
+        #  A simulated run still requires credentials to have been entered.
+        #  Letting the demonstration skip the step everyone forgets would mean
+        #  the first real attempt fails on something the demo never exercised.
         if not creds.complete:
             raise NotConfigured("Not set: " + ", ".join(creds.missing))
         self.creds = creds
@@ -224,6 +245,19 @@ class Tebra:
 
     def call(self, operation: str, body: str = "") -> str:
         data = envelope(operation, self.header, body)
+
+        #  The simulation seam. The envelope above is the real one, built by
+        #  the real code and handed to the simulator exactly as it would go on
+        #  the wire - so the response is parsed by the real parser too.
+        if self.simulated:
+            from . import simulation
+
+            xml = simulation.tebra_response(
+                operation, data.decode("utf-8", "replace"))
+            text = xml.decode("utf-8", "replace")
+            check_for_error(text)
+            return text
+
         request = urllib.request.Request(
             self.endpoint, data=data, method="POST",
             headers={"Content-Type": "text/xml; charset=utf-8",
@@ -411,7 +445,9 @@ def appointment_payload(booking, *, practice_id: str, service_location_id: str,
 
 
 def connect(db) -> "Tebra":
-    return Tebra(credentials_from(db))
+    from . import simulation
+
+    return Tebra(credentials_from(db), simulated=simulation.enabled(db))
 
 
 def check(db):
@@ -429,7 +465,16 @@ def check(db):
     except TebraError as exc:
         return Result(False, "Tebra refused the request.", str(exc))
 
+    from . import simulation
+
     names = ", ".join(p.get("PracticeName", "?") for p in practices[:5])
+    if simulation.enabled(db):
+        #  Never the word "connected" for a simulated answer. The one thing a
+        #  demonstration must not do is become indistinguishable from the real
+        #  system, because somebody eventually believes it.
+        return Result(True, f"Simulated. {len(practices)} practice(s) answered.",
+                      "Demonstration mode - nothing left this machine. "
+                      + names)
     return Result(bool(practices) or True,
                   f"Connected. {len(practices)} practice(s) visible.",
                   names or "GetPractices returned without an error.")
@@ -463,7 +508,7 @@ def push_patient(db, client, *, user=None, ip: str = "") -> str:
     #  PHI left this system. That is the event the audit log exists for, and it
     #  is written before the commit so it cannot be separated from the change
     #  that caused it.
-    log(db, f"Patient chart created in Tebra (id {new_id})", "client",
+    log(db, f"Tebra chart created: {new_id}", "client",
         client.id, user_id=getattr(user, "id", None), ip=ip)
     return new_id
 
@@ -488,9 +533,8 @@ def push_document(db, client, *, content: bytes, name: str, file_name: str,
     document_id = api.create_document(
         practice_id=api.creds.practice_id, patient_id=client.tebra_patient_id,
         name=name, file_name=file_name, content=content, label=label, notes=notes)
-    log(db, f"Document filed to Tebra chart {client.tebra_patient_id} "
-            f"({name}, {len(content)} bytes)", "client", client.id,
-        user_id=getattr(user, "id", None), ip=ip)
+    log(db, f"Tebra document filed: {document_id} ({len(content)}b)",
+        "client", client.id, user_id=getattr(user, "id", None), ip=ip)
     return document_id
 
 
@@ -510,6 +554,6 @@ def push_appointment(db, booking, *, service_location_id: str = "",
         booking, practice_id=api.creds.practice_id,
         service_location_id=location, patient_tebra_id=client.tebra_patient_id)
     appointment_id = api.create_appointment(payload)
-    log(db, f"Appointment mirrored to Tebra (id {appointment_id})", "client",
+    log(db, f"Tebra appointment created: {appointment_id}", "client",
         client.id, user_id=getattr(user, "id", None), ip=ip)
     return appointment_id

@@ -40,6 +40,8 @@ from . import credentials
 from . import cache
 from . import integrations
 from . import intakeq
+from . import simulation
+from . import tebra
 from . import schedule
 from . import trials
 from .trials import Trial
@@ -1416,7 +1418,8 @@ def integrations_view(request: Request, db: Session = Depends(get_db),
         saved=request.session.pop("credential_note", ""),
         save_error=request.session.pop("credential_error", ""),
         results=request.session.get("integration_results", {}),
-        run=intakeq.latest_run(db), day_limit=intakeq.PER_DAY))
+        run=intakeq.latest_run(db), day_limit=intakeq.PER_DAY,
+        demo=simulation.enabled(db)))
 
 
 @app.post("/integrations/{key}/save")
@@ -1529,11 +1532,94 @@ def intakeq_import(request: Request, mode: str = F("resume"),
         run.message = ""
 
     intakeq.run_slice(db, run)
-    log(db, f"IntakeQ import {run.status}: {run.clients_new} new patients, "
-            f"{run.intakes_new} intakes, {run.requests_used} requests used",
-        "integration", "intakeq")
+    log(db, f"IntakeQ import {run.status}: +{run.clients_new} patients, "
+            f"+{run.intakes_new} intakes", "integration", "intakeq")
     db.commit()
     return RedirectResponse("/integrations#intakeq-import", status_code=303)
+
+
+@app.post("/integrations/demo")
+def integrations_demo(request: Request, on: str = F(""),
+                      db: Session = Depends(get_db),
+                      _=Depends(needs(perms.USERS_MANAGE))):
+    """Turn demonstration mode on or off.
+
+    Audited like a credential change, because that is what it is: it decides
+    whether the numbers on every integration screen came from a vendor or from
+    this machine, and somebody reading the log later deserves to know which
+    the practice was looking at.
+    """
+    user = auth.current_user(request, db)
+    wanted = on.strip() in ("1", "on", "true")
+    simulation.set_enabled(db, wanted, who=user.name if user else "")
+    log(db, f"Demonstration mode turned {'on' if wanted else 'off'}",
+        "integration", "demo")
+    db.commit()
+    request.session["credential_note"] = (
+        "Demonstration mode is ON. IntakeQ and Tebra are answered by this "
+        "machine with invented data, and every screen says so."
+        if wanted else
+        "Demonstration mode is OFF. The integrations will use real "
+        "credentials, and refuse until they have them.")
+    return RedirectResponse("/integrations", status_code=303)
+
+
+@app.post("/integrations/demo/clear")
+def integrations_demo_clear(request: Request, db: Session = Depends(get_db),
+                            _=Depends(needs(perms.USERS_MANAGE))):
+    """Remove every row demonstration mode created, and nothing else.
+
+    Scoped by `source`, which is why that column was worth having. A
+    demonstration that cannot be undone is one nobody dares run against a
+    database they care about - and the first thing anybody does after a demo is
+    ask whether the invented patients are still there.
+    """
+    doomed = db.query(Client).filter_by(source=intakeq.INTAKEQ).all()
+    ids = [c.id for c in doomed]
+    intakes = 0
+    if ids:
+        intakes = (db.query(intakeq.ImportedIntake)
+                   .filter(intakeq.ImportedIntake.client_id.in_(ids))
+                   .delete(synchronize_session=False))
+    #  Intakes whose patient was never matched are demonstration rows too, and
+    #  leaving orphans behind would make the count wrong next time.
+    intakes += (db.query(intakeq.ImportedIntake)
+                .filter(intakeq.ImportedIntake.client_id.is_(None))
+                .delete(synchronize_session=False))
+    for client in doomed:
+        db.delete(client)
+    db.query(intakeq.ImportRun).delete(synchronize_session=False)
+    log(db, f"Demo data removed: {len(ids)} patients, {intakes} intakes",
+        "integration", "demo")
+    db.commit()
+    request.session["credential_note"] = (
+        f"Removed {len(ids)} simulated patient(s) and {intakes} intake(s). "
+        f"Nothing else was touched.")
+    return RedirectResponse("/integrations", status_code=303)
+
+
+@app.post("/clients/{client_id}/tebra")
+def push_client_to_tebra(client_id: int, request: Request,
+                         db: Session = Depends(get_db),
+                         _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Create this patient's chart in Tebra.
+
+    Behind CLINICAL_EDIT rather than CLIENTS_EDIT: creating a medical record in
+    another system is a clinical act, and front desk moving a patient into the
+    practice's EHR is not a decision reception should be making alone.
+    """
+    client = get_or_404(db, Client, client_id)
+    user = auth.current_user(request, db)
+    try:
+        new_id = tebra.push_patient(db, client, user=user, ip=client_ip(request))
+        db.commit()
+        request.session["chart_note"] = (
+            f"{client.first_name} has a Tebra chart: {new_id}."
+            + (" (simulated)" if simulation.enabled(db) else ""))
+    except tebra.TebraError as exc:
+        db.rollback()
+        request.session["chart_error"] = str(exc)
+    return RedirectResponse(f"/clients/{client_id}#tebra", status_code=303)
 
 
 @app.post("/integrations/intakeq/preview")

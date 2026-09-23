@@ -19,10 +19,51 @@
   {{ save_error }}</div>
 {% endif %}
 
+{% if demo %}
+<div style="background:#efe7fb;border-left:3px solid #6b3fa0;color:#4a2a72;
+            padding:14px 17px;margin:0 0 20px;font-size:14.5px">
+  <b>&#9679; Demonstration mode is ON.</b>
+  <p style="margin:7px 0 0">
+    IntakeQ and Tebra are being answered by this machine with invented data.
+    <b>Nothing leaves this computer and no real patient exists in any of it.</b>
+    The integration code itself is the real code &mdash; the same requests are
+    built and the same responses parsed &mdash; so what you see working here is
+    what will work when credentials arrive. Every screen that shows integration
+    data says "simulated" while this is on.
+  </p>
+  {% if can(user, P.USERS_MANAGE) %}
+  <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:11px">
+    <form class="inline" method="post" action="/integrations/demo">
+      <input type="hidden" name="on" value="0">
+      <button class="btn btn-sm">Turn demonstration mode off</button>
+    </form>
+    <form class="inline" method="post" action="/integrations/demo/clear"
+          onsubmit="return confirm('Remove every simulated patient and intake? \nPatients entered or imported for real are not touched.')">
+      <button class="btn btn-sm">Remove the demonstration data</button>
+    </form>
+  </div>
+  <p class="hint" style="margin:9px 0 0;color:#4a2a72">
+    Simulated patients are marked as such and can be removed in one click
+    &mdash; a demonstration you cannot undo is one nobody runs twice.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
 <p class="hint" style="max-width:760px;margin:0 0 22px">
   The systems this app talks to. <b>Every check below makes a real call</b> &mdash;
   none of them reports success just because a credential is present, because a
   key sitting in a setting proves only that somebody typed something.
+  {% if not demo and can(user, P.USERS_MANAGE) %}
+  <br><br>
+  No credentials yet? <b>Demonstration mode</b> answers IntakeQ and Tebra from
+  this machine so the whole flow can be shown working, then swaps to the real
+  thing when keys arrive &mdash; without a line of code changing.
+  <form class="inline" method="post" action="/integrations/demo" style="margin-top:9px">
+    <input type="hidden" name="on" value="1">
+    <button class="btn btn-sm">Turn demonstration mode on</button>
+  </form>
+  {% endif %}
 </p>
 
 <div class="conns">

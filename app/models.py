@@ -563,9 +563,23 @@ def init_db() -> None:
 
 def log(session, action: str, entity_type: str = "", entity_id: str = "",
         user_id: int | None = None, ip: str = "") -> None:
-    """The only way to write an audit row."""
-    session.add(AuditEvent(action=action, entity_type=entity_type, entity_id=str(entity_id),
-                           user_id=user_id, ip_address=ip))
+    """The only way to write an audit row.
+
+    Every field is trimmed to the column it goes in. This looks like defensive
+    noise and is not: `action` is 64 characters, an over-long one raises on
+    flush, and the flush that fails is the one at the end of the operation that
+    was being audited. A push to Tebra that had already created a chart was
+    rolled back by exactly this - the side effect had happened, and the record
+    of it was the thing that got discarded.
+
+    A slightly shortened audit line is a small loss. A successful clinical
+    action with no audit row, or an exception thrown after an external system
+    has already been written to, is a large one.
+    """
+    session.add(AuditEvent(action=(action or "")[:64],
+                           entity_type=(entity_type or "")[:64],
+                           entity_id=str(entity_id)[:64],
+                           user_id=user_id, ip_address=(ip or "")[:64]))
 
 
 # Registering the clinical tables at import time, not inside init_db().
