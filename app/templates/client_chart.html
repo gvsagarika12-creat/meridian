@@ -38,6 +38,21 @@
   <div class="chart-body">
     <h1 id="facesheet">Facesheet</h1>
 
+    {#  Shared by every action on this page - Tebra pushes, medication edits,
+        payments, and more - not just the archive link below. Rendered once,
+        here, so a Tebra error does not appear to be about the hospital
+        archive just because that section happened to render the flash first. #}
+    {% if chart_note %}
+    <div style="background:var(--good-soft);border-left:3px solid var(--good);
+                color:var(--good);padding:11px 14px;margin-bottom:16px;font-size:14px">
+      {{ chart_note }}</div>
+    {% endif %}
+    {% if chart_error %}
+    <div style="background:var(--bad-soft);border-left:3px solid var(--bad);
+                color:var(--bad);padding:11px 14px;margin-bottom:16px;font-size:14px">
+      {{ chart_error }}</div>
+    {% endif %}
+
     <div class="cards">
       <!-- medications -->
       <section class="card" id="medications">
@@ -605,16 +620,6 @@
       <section class="card" id="archive">
         <h2>&#127973; Hospital archive</h2>
 
-        {% if chart_note %}
-        <div style="background:var(--good-soft);border-left:3px solid var(--good);
-                    color:var(--good);padding:11px 14px;margin-bottom:13px;font-size:14px">
-          {{ chart_note }}</div>
-        {% endif %}
-        {% if chart_error %}
-        <div style="background:var(--bad-soft);border-left:3px solid var(--bad);
-                    color:var(--bad);padding:11px 14px;margin-bottom:13px;font-size:14px">
-          {{ chart_error }}</div>
-        {% endif %}
         {% if link_notes %}
         <div style="background:#fdf2dc;border-left:3px solid #c98a12;color:#7a5200;
                     padding:12px 15px;margin-bottom:14px;font-size:14px">
