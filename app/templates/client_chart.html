@@ -593,7 +593,6 @@
       </section>
       {% endif %}
 
-      {% if can(user, P.CLINICAL_EDIT) %}
       <section class="card" id="tebra">
         <h2>&#129525; Tebra chart</h2>
         {% if client.tebra_patient_id %}
@@ -605,7 +604,7 @@
           Pushed once and never again &mdash; the chart id above is checked
           before any further attempt, because two charts for one person is a
           failure nobody notices until the records disagree.</p>
-        {% else %}
+        {% elif can(user, P.CLINICAL_EDIT) %}
         <p class="hint" style="margin:0 0 12px">
           No Tebra chart yet. Creating one sends this patient's name, date of
           birth and contact details to Tebra and records the chart id here, so
@@ -613,9 +612,10 @@
         <form class="inline" method="post" action="/clients/{{ client.id }}/tebra">
           <button class="btn btn-sm btn-green">Create the chart in Tebra</button>
         </form>
+        {% else %}
+        <p class="hint" style="margin:0">No Tebra chart yet - a doctor can create one.</p>
         {% endif %}
       </section>
-      {% endif %}
 
       <section class="card" id="archive">
         <h2>&#127973; Hospital archive</h2>
