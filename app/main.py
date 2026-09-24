@@ -2345,7 +2345,7 @@ def my_patients(request: Request, provider: int = -1, q: str = "",
     me = auth.current_user(request, db)
     doctors = (db.query(User)
                .filter(User.is_active.is_(True),
-                       User.role.in_([UserRole.practitioner, UserRole.owner]))
+                       User.role == UserRole.practitioner)
                .order_by(User.name).all())
 
     if provider == -1:

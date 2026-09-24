@@ -8,6 +8,7 @@ config/session.key
 first-run-credentials.txt
 desktop.log
 outbox.log
+uvicorn_local.log
 
 # The hospital's own archive. Real patient data belongs with the practice, not
 # in a repository - the folder is tracked, its contents are not.

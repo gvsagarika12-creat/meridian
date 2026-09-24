@@ -64,15 +64,16 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
     # Deliberately empty. Someone who signed up themselves has not yet been
     # vouched for by anyone, so they get a login and nothing behind it.
     UserRole.pending: set(),
-    # The practice owner is a prescriber here, so the clinical permission comes
-    # with the role. In a practice where the owner does not see patients, take
-    # CLINICAL_EDIT off this line - nothing else needs to change.
+    # A pure administrator here, not a prescriber - runs the system, does not
+    # practise medicine, same split as UserRole.admin one step down. In a
+    # practice where the owner also sees patients, add CLINICAL_EDIT and
+    # PRESCRIBE back onto this line - nothing else needs to change.
     UserRole.owner: {
         FORMS_VIEW, FORMS_CREATE, FORMS_EDIT, FORMS_DELETE,
-        CLIENTS_VIEW, CLIENTS_EDIT, CLINICAL_EDIT, SCHEDULE_EDIT,
+        CLIENTS_VIEW, CLIENTS_EDIT, SCHEDULE_EDIT,
         SUBMISSIONS_VIEW, SUBMISSIONS_SEND,
         EVENTS_VIEW, USERS_MANAGE, INTEGRATIONS_IMPORT,
-        PRESCRIBE, BILLING_EDIT,
+        BILLING_EDIT,
     },
     # Runs the system, does not practise medicine. An administrator can reach
     # every screen and every account, and still cannot write a diagnosis - which
