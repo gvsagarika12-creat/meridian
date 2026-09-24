@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}My Patients{% endblock %}
 {% block chrome %}
-<div class="crumb"><a href="/">My Dashboard</a>
-  <span class="sep">&rsaquo;</span>My Patients
+<div class="crumb">
+  <div>Hello, {{ user.name if user else 'Doctor' }}!</div>
   <div class="actions">
     {% if can(user, P.SUBMISSIONS_SEND) %}
     <a class="btn btn-green" href="/send">Send a form</a>{% endif %}
     <a class="btn" href="/records">Combined records</a>
+    <a class="btn" href="/records/download">&#8659; Download Excel</a>
   </div>
 </div>
 {% endblock %}
@@ -98,6 +99,11 @@
         {% else %}
         <a class="btn btn-sm btn-green" href="/send?client={{ c.id }}">Send form</a>
         {% endif %}
+        {% endif %}
+        {% if s and trial %}
+        <a class="btn btn-sm" href="/trials/{{ trial.id }}#client-{{ c.id }}"
+           title="See exactly which criteria are met, unknown, or excluding -
+                  and why">Review eligibility</a>
         {% endif %}
         <a class="btn btn-sm" href="/clients/{{ c.id }}">Medical record</a>
       </div>

@@ -35,7 +35,7 @@
                  <th>What decided it</th></tr></thead>
       <tbody>
         {% for client, s in screened %}
-        <tr>
+        <tr id="client-{{ client.id }}">
           <td class="who"><a href="/clients/{{ client.id }}">{{ client.name }}</a></td>
           <td><span class="verdict {{ s.verdict | lower | replace(' ', '-') }}">
               {{ s.verdict }}</span></td>
@@ -184,6 +184,14 @@
     white-space:nowrap;background:#fff;box-shadow:1px 0 0 var(--rule)}
   .screening thead th.who{background:var(--rail);z-index:3}
   .screening tbody tr:nth-child(even) td.who{background:#faf9f7}
+  /* Landing here from My Patients' "Review eligibility" link - a brief
+     highlight so the one row that was actually clicked for is findable in a
+     long, scrollable list, not just scrolled to. */
+  .screening tbody tr:target{animation:reviewFlash 2.4s ease-out 1}
+  .screening tbody tr:target td.who{background:var(--accent-soft)}
+  @keyframes reviewFlash{
+    0%{background:var(--accent-soft)} 100%{background:transparent}
+  }
   .panel label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
   .panel label input,.panel label select{padding:8px 10px;border:1px solid #ccd4da;
     border-radius:3px;font-family:inherit;font-size:14.5px}
