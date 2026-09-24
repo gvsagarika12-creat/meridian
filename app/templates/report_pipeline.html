@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Pipeline{% endblock %}
+{% block chrome %}
+<div class="crumb"><a href="/">My Dashboard</a>
+  <span class="sep">&rsaquo;</span><a href="/reports">Reports</a>
+  <span class="sep">&rsaquo;</span>Pipeline</div>
+{% endblock %}
+{% block full %}
+<div class="wrap" style="max-width:1100px">
+{% include "_tbl.html" %}
+<div style="display:flex;gap:22px;align-items:flex-start">
+  {% include "_report_nav.html" %}
+  <div style="flex:1;min-width:0">
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:0 0 8px;font-weight:700">Intake funnel</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+              gap:14px;margin-bottom:24px">
+    <div class="tile"><div class="lab">Patients</div>
+      <div class="big">{{ total_patients }}</div></div>
+    <div class="tile"><div class="lab">Sent</div>
+      <div class="big">{{ intake_counts.get('sent', 0) }}</div></div>
+    <div class="tile"><div class="lab">Opened</div>
+      <div class="big">{{ intake_counts.get('opened', 0) }}</div></div>
+    <div class="tile"><div class="lab">In progress</div>
+      <div class="big">{{ intake_counts.get('partial', 0) }}</div></div>
+    <div class="tile"><div class="lab">Submitted</div>
+      <div class="big" style="color:var(--good)">{{ intake_counts.get('submitted', 0) }}</div></div>
+    <div class="tile"><div class="lab">Reviewed</div>
+      <div class="big">{{ intake_counts.get('reviewed', 0) }}</div></div>
+  </div>
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:0 0 8px;font-weight:700">Trial screening</div>
+  {% if trial_rows %}
+  <div class="panel" style="margin-bottom:24px"><div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Trial</th><th>Looks eligible</th><th>Needs review</th>
+        <th>Not eligible</th><th>No criteria</th></tr></thead>
+      <tbody>
+      {% for trial, v in trial_rows %}
+      <tr>
+        <td><a href="/trials/{{ trial.id }}">{{ trial.name }}</a></td>
+        <td><span class="pill" style="background:var(--good)">{{ v['Looks eligible'] }}</span></td>
+        <td><span class="pill" style="background:var(--warn)">{{ v['Needs review'] }}</span></td>
+        <td><span class="pill" style="background:var(--bad)">{{ v['Not eligible'] }}</span></td>
+        <td>{{ v['No criteria'] }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  {% else %}
+  <p class="hint" style="margin-bottom:24px">No active trial is recruiting, so there
+    is nothing to screen against.</p>
+  {% endif %}
+
+  <div class="hint" style="font-size:11px;text-transform:uppercase;
+              letter-spacing:.5px;margin:0 0 8px;font-weight:700">Patient experience</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+              gap:14px">
+    <div class="tile"><div class="lab">Surveys sent</div>
+      <div class="big">{{ survey_total }}</div></div>
+    <div class="tile"><div class="lab">Completed</div>
+      <div class="big">{{ survey_completed }}</div></div>
+    <div class="tile"><div class="lab">Response rate</div>
+      <div class="big">{{ '%.0f'|format(survey_completed / survey_total * 100)
+        if survey_total else 0 }}%</div></div>
+    <div class="tile"><div class="lab">Average rating</div>
+      <div class="big" style="color:{{ 'var(--good)' if avg_rating and avg_rating >= 4
+        else 'var(--bad)' if avg_rating and avg_rating < 3 else 'inherit' }}"
+        >{{ avg_rating if avg_rating is not none else '—' }}{% if avg_rating %} / 5{% endif %}</div></div>
+  </div>
+  <p class="hint" style="margin-top:10px"><a href="/surveys">See every response &rsaquo;</a></p>
+
+  </div>
+</div>
+</div>
+{% endblock %}

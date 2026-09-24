@@ -227,6 +227,21 @@ def _vitals(c) -> str:
     return _joined(parts) + stamp
 
 
+#  A cell that opens with =, +, -, @ (or a leading tab/CR) is a formula to
+#  Excel, not text - and several columns here are patient-typed free text
+#  ("Presenting Problem", "Substance Use") that nobody has ever validated
+#  against that. A prefixed apostrophe is the same fix spreadsheet software
+#  uses when a person types a leading "=" themselves: it forces the cell to
+#  stay text instead of being evaluated as a formula when the file is opened.
+_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _neutralize(value):
+    if isinstance(value, str) and value[:1] in _FORMULA_LEADERS:
+        return "'" + value
+    return value
+
+
 def row_for(client) -> list[str]:
     return [fn(client) for _, fn, _ in COLUMNS]
 
@@ -251,7 +266,7 @@ def to_excel(clients) -> bytes:
 
     for r, client in enumerate(clients, start=2):
         for c, value in enumerate(row_for(client), start=1):
-            cell = ws.cell(row=r, column=c, value=value)
+            cell = ws.cell(row=r, column=c, value=_neutralize(value))
             cell.alignment = Alignment(vertical="top", wrap_text=True)
 
     ws.freeze_panes = "C2"
@@ -319,5 +334,5 @@ def _add_answers_sheet(wb, clients) -> None:
 
 def _write(ws, row: int, values: list) -> None:
     for col, value in enumerate(values, start=1):
-        cell = ws.cell(row=row, column=col, value=value)
+        cell = ws.cell(row=row, column=col, value=_neutralize(value))
         cell.alignment = Alignment(vertical="top", wrap_text=True)

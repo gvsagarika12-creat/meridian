@@ -621,3 +621,4 @@ from . import hospital  # noqa: E402,F401
 from . import trials  # noqa: E402,F401
 from . import schedule  # noqa: E402,F401
 from . import credentials  # noqa: E402,F401
+from . import surveys  # noqa: E402,F401

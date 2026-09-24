@@ -49,7 +49,7 @@ MAX_ATTEMPTS = 5
 LOCKOUT = timedelta(minutes=15)
 
 # Paths reachable without a session. Everything else requires one.
-PUBLIC_PREFIXES = ("/login", "/logout", "/static/", "/f/", "/setup",
+PUBLIC_PREFIXES = ("/login", "/logout", "/static/", "/f/", "/survey/", "/setup",
                    "/forgot", "/reset/", "/request-access", "/register",
                    # The patient portal runs its own, entirely separate
                    # authentication - see app/portal.py. This middleware

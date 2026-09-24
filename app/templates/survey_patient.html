@@ -1,0 +1,49 @@
+{% extends "patient_base.html" %}
+{% block body %}
+<div class="pt-card" style="max-width:520px;margin:0 auto;padding:40px 36px">
+  {% if done %}
+    <div style="font-size:52px;color:#5cb85c;line-height:1;text-align:center">&#10003;</div>
+    <h1 style="font-size:24px;margin:16px 0 10px;text-align:center">Thank you</h1>
+    <p style="text-align:center">Your feedback has been received.</p>
+    <p class="hint" style="text-align:center">You can close this window.</p>
+  {% else %}
+    <h1 style="font-size:22px;margin:0 0 6px">How did we do?</h1>
+    <p class="hint" style="margin:0 0 22px">{{ practice.name }} would like to know how
+      your recent visit went. This takes less than a minute, and is not part of your
+      medical record.</p>
+
+    {% if errors %}
+    <div style="background:#f9e8e6;border-left:3px solid #a4413a;color:#7a2e28;
+                padding:12px 15px;margin-bottom:18px;font-size:14px">
+      {% for e in errors %}<div>{{ e }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/survey/{{ survey.token }}/submit">
+      <label style="display:block;font-weight:600;margin-bottom:10px">
+        Overall, how would you rate your visit?</label>
+      <div style="display:flex;gap:8px;margin-bottom:22px">
+        {% for n in range(1, 6) %}
+        <label style="flex:1;text-align:center;border:1px solid #ccd4da;border-radius:6px;
+                      padding:14px 4px;cursor:pointer">
+          <input type="radio" name="rating" value="{{ n }}" required
+                 style="display:block;margin:0 auto 6px">
+          {{ n }}
+        </label>
+        {% endfor %}
+      </div>
+      <p class="hint" style="display:flex;justify-content:space-between;margin:-14px 0 20px">
+        <span>1 &mdash; poor</span><span>5 &mdash; excellent</span>
+      </p>
+
+      <label>Anything you'd like us to know? (optional)
+        <textarea name="comments" rows="4" maxlength="2000"
+                  style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px;
+                         margin-top:6px"></textarea>
+      </label>
+
+      <div style="margin-top:20px"><button class="btn btn-primary" type="submit">Submit</button></div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

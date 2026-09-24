@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Experience Surveys{% endblock %}
+{% block chrome %}<div class="crumb"><a href="/">My Dashboard</a>
+<span class="sep">&rsaquo;</span>Experience Surveys</div>{% endblock %}
+{% block content %}
+
+<div class="cols" style="grid-template-columns:340px 1fr;align-items:start;gap:22px">
+  {% if can(user, P.SUBMISSIONS_SEND) %}
+  <div class="panel"><h2>&#9733; Send a Survey</h2><div class="body">
+    <form method="post" action="/surveys/send" style="display:grid;gap:15px">
+      <label>Client
+        <select name="client_id" required
+                style="width:100%;padding:9px;border:1px solid #ccd4da;border-radius:3px">
+          {% for c in clients %}
+          <option value="{{ c.id }}" {{ 'selected' if preselect == c.id }}>{{ c.name }}
+            &mdash; {{ c.email or 'no email' }}
+            {%- if not c.allow_email and not c.allow_sms %} (no contact consent){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <fieldset style="border:1px solid var(--rule);border-radius:3px;padding:12px 16px">
+        <legend class="hint" style="padding:0 6px">Send the link by</legend>
+        <label style="display:flex;gap:9px;align-items:center;padding:3px 0">
+          <input type="checkbox" name="channels" value="email" checked> Email</label>
+        <label style="display:flex;gap:9px;align-items:center;padding:3px 0">
+          <input type="checkbox" name="channels" value="sms"> SMS</label>
+      </fieldset>
+      <div><button class="btn btn-green">Send survey</button></div>
+    </form>
+    <p class="hint" style="margin-top:16px;border-top:1px solid var(--rule);padding-top:14px">
+      Email backend: <b>{{ backends.email }}</b> &middot; SMS backend: <b>{{ backends.sms }}</b><br>
+      The message asks for feedback on the visit &mdash; it never names a form or a condition.</p>
+  </div></div>
+  {% endif %}
+
+  <div style="min-width:0">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+              gap:14px;margin-bottom:18px">
+    <div class="tile"><div class="lab">Responses</div>
+      <div class="big">{{ rated_count }}</div></div>
+    <div class="tile"><div class="lab">Average rating</div>
+      <div class="big" style="color:{{ 'var(--good)' if avg and avg >= 4
+        else 'var(--bad)' if avg and avg < 3 else 'inherit' }}"
+        >{{ avg if avg is not none else '—' }}{% if avg %} / 5{% endif %}</div></div>
+  </div>
+
+  <div class="panel"><div class="body" style="padding:10px 16px 0">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <a class="btn btn-sm {{ 'btn-green' if not status }}" href="/surveys">All</a>
+      <a class="btn btn-sm {{ 'btn-green' if status == 'sent' }}" href="/surveys?status=sent">Awaiting response</a>
+      <a class="btn btn-sm {{ 'btn-green' if status == 'completed' }}" href="/surveys?status=completed">Completed</a>
+    </div>
+  </div>
+  <div class="body" style="padding:0">
+    <table class="t">
+      <thead><tr><th>Patient</th><th>Sent</th><th>Status</th><th>Rating</th><th>Comments</th></tr></thead>
+      <tbody>
+      {% for s in rows %}
+      <tr>
+        <td>{{ s.client.name if s.client else '—' }}</td>
+        <td>{{ s.sent_at|ago }}</td>
+        <td>
+          {% if s.status.value == 'completed' %}<span style="color:var(--good);font-weight:600">completed</span>
+          {% elif s.is_expired %}<span class="hint">expired</span>
+          {% else %}<span style="color:var(--warn);font-weight:600">awaiting response</span>{% endif %}
+        </td>
+        <td>{{ s.rating_overall ~ ' / 5' if s.rating_overall else '—' }}</td>
+        <td class="hint" style="max-width:320px">{{ s.comments or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="padding:20px 16px"><span class="hint">
+        No surveys sent yet.</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  </div>
+</div>
+{% endblock %}

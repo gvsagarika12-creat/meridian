@@ -63,6 +63,8 @@
     <a href="/outbox" class="{{ 'on' if nav=='outbox' }}"><i>✉</i>Outbox</a>{% endif %}
     {% if can(user, P.SUBMISSIONS_SEND) %}
     <a href="/broadcasts" class="{{ 'on' if nav=='broadcasts' }}"><i>📣</i>Broadcasts</a>{% endif %}
+    {% if can(user, P.SUBMISSIONS_VIEW) %}
+    <a href="/surveys" class="{{ 'on' if nav=='surveys' }}"><i>&#9733;</i>Experience Surveys</a>{% endif %}
     {% if can(user, P.EVENTS_VIEW) %}
     <a href="/events" class="{{ 'on' if nav=='events' }}"><i>⎘</i>Activity</a>{% endif %}
     {% if can(user, P.USERS_MANAGE) %}

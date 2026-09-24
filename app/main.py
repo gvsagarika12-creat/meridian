@@ -53,6 +53,8 @@ from . import schedule
 from . import trials
 from .trials import Trial
 from . import matching
+from . import surveys
+from .surveys import ExperienceSurvey, SurveyStatus
 from .recovery import router as recovery_router
 from .seed import seed
 
@@ -2604,6 +2606,53 @@ def outbox(request: Request, db: Session = Depends(get_db),
         backends=messaging.describe(db)))
 
 
+# ------------------------------------------------------------------- surveys
+#
+# Post-visit feedback, kept deliberately separate from the clinical record -
+# see app/surveys.py. Sending one is SUBMISSIONS_SEND (the same permission that
+# sends a form link); reading the results is SUBMISSIONS_VIEW, same as the rest
+# of what a patient has sent back.
+
+@app.get("/surveys", response_class=HTMLResponse)
+def surveys_page(request: Request, status: str = "", client: int | None = None,
+                 db: Session = Depends(get_db),
+                 _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    rows_q = (db.query(ExperienceSurvey)
+             .options(joinedload(ExperienceSurvey.client))
+             .order_by(ExperienceSurvey.sent_at.desc()))
+    if status:
+        try:
+            rows_q = rows_q.filter(ExperienceSurvey.status == SurveyStatus(status))
+        except ValueError:
+            pass
+    rows = rows_q.limit(500).all()
+
+    rated = [s.rating_overall for s in rows if s.rating_overall]
+    avg = round(sum(rated) / len(rated), 1) if rated else None
+
+    return render("surveys.html", ctx(
+        request, db, nav="surveys", rows=rows, status=status, avg=avg,
+        rated_count=len(rated),
+        clients=db.query(Client).filter_by(archived=False).order_by(Client.last_name).all(),
+        preselect=client, backends=messaging.describe(db)))
+
+
+@app.post("/surveys/send")
+def surveys_send(request: Request, client_id: int = F(...),
+                 channels: list[str] = F([]), db: Session = Depends(get_db),
+                 _=Depends(needs(perms.SUBMISSIONS_SEND))):
+    client_obj = get_or_404(db, Client, client_id)
+    survey = ExperienceSurvey(client_id=client_obj.id, token=new_token(),
+                              expires_at=datetime.utcnow() + surveys.LINK_LIFETIME)
+    db.add(survey)
+    db.flush()
+    log(db, "Experience Survey Sent", "experience_survey", survey.id)
+    if channels:
+        surveys.deliver(db, request, survey, [c for c in channels if c in ("email", "sms")])
+    db.commit()
+    return RedirectResponse("/surveys", status_code=303)
+
+
 @app.get("/submissions/{sub_id}", response_class=HTMLResponse)
 def submission_detail(sub_id: int, request: Request, db: Session = Depends(get_db),
                       _=Depends(needs(perms.SUBMISSIONS_VIEW))):
@@ -2660,6 +2709,7 @@ def preview(form_id: int, request: Request, page: int = 0,
 
 app.include_router(patient_router)
 app.include_router(recovery_router)
+app.include_router(surveys.router)
 
 # Seed at import so the app is populated however it's launched - desktop.py,
 # uvicorn directly, or a test client (which never fires startup events).
@@ -3981,6 +4031,52 @@ def report_encounters(request: Request, db: Session = Depends(get_db),
             .order_by(ehr.Encounter.seen_on.desc()).limit(500).all())
     return render("report_encounters.html", ctx(
         request, db, nav="reports", report="encounters", encounters=rows))
+
+
+@app.get("/reports/pipeline", response_class=HTMLResponse)
+def report_pipeline(request: Request, db: Session = Depends(get_db),
+                    _=Depends(needs(perms.SUBMISSIONS_VIEW))):
+    """The funnel: forms out, forms back, who's eligible, who's asked for feedback.
+
+    Every number here is a plain count against a real table - nothing modelled
+    or forecast. A pipeline dashboard that estimates is a pipeline dashboard
+    nobody can use to answer "how many, right now".
+    """
+    total_patients = db.query(Client).filter_by(archived=False).count()
+    intake_counts = {status.value: n for status, n in
+                     db.query(Submission.status, func.count(Submission.id))
+                     .group_by(Submission.status).all()}
+
+    trial_rows: list[tuple] = []
+    trials_all = db.query(Trial).filter_by(is_active=True).order_by(Trial.name).all()
+    if trials_all:
+        clients = (db.query(Client).filter_by(archived=False)
+                   .options(selectinload(Client.medications),
+                            selectinload(Client.submissions_list)
+                            .selectinload(Submission.answers)
+                            .joinedload(Answer.question))
+                   .all())
+        archives = records_for_many(db, (c.hospital_id for c in clients))
+        for trial in trials_all:
+            verdicts = {"Looks eligible": 0, "Needs review": 0,
+                       "Not eligible": 0, "No criteria": 0}
+            for c in clients:
+                v = trials.evaluate(c, trial, archives.get(c.hospital_id or 0, [])).verdict
+                verdicts[v] = verdicts.get(v, 0) + 1
+            trial_rows.append((trial, verdicts))
+
+    survey_total = db.query(ExperienceSurvey).count()
+    survey_completed = db.query(ExperienceSurvey).filter_by(
+        status=SurveyStatus.completed).count()
+    ratings = [r for (r,) in db.query(ExperienceSurvey.rating_overall)
+              .filter(ExperienceSurvey.rating_overall.isnot(None)).all()]
+    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+
+    return render("report_pipeline.html", ctx(
+        request, db, nav="reports", report="pipeline",
+        total_patients=total_patients, intake_counts=intake_counts,
+        trial_rows=trial_rows, survey_total=survey_total,
+        survey_completed=survey_completed, avg_rating=avg_rating))
 
 
 # ------------------------------------------------------------------ broadcasts
