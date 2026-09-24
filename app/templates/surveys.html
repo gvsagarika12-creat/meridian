@@ -36,9 +36,9 @@
   <div style="min-width:0">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
               gap:14px;margin-bottom:18px">
-    <div class="tile"><div class="lab">Responses</div>
+    <div class="stat"><div class="lab">Responses</div>
       <div class="big">{{ rated_count }}</div></div>
-    <div class="tile"><div class="lab">Average rating</div>
+    <div class="stat"><div class="lab">Average rating</div>
       <div class="big" style="color:{{ 'var(--good)' if avg and avg >= 4
         else 'var(--bad)' if avg and avg < 3 else 'inherit' }}"
         >{{ avg if avg is not none else '—' }}{% if avg %} / 5{% endif %}</div></div>

@@ -1,16 +1,110 @@
 {% extends "base.html" %}
 {% block title %}Home &middot; {{ practice.short_name or practice.name }}{% endblock %}
 
-{% block chrome %}<div class="crumb">Home</div>{% endblock %}
+{% block chrome %}
+<div class="crumb">
+  <div>
+    <div>Hello, {{ user.name if user else 'there' }}!</div>
+  </div>
+  <div class="actions">
+    {% if can(user, P.SUBMISSIONS_SEND) %}
+    <a class="btn btn-red" href="/send">Send Form to Client</a>{% endif %}
+    {% if can(user, P.CLIENTS_EDIT) %}
+    <a class="btn" href="/clients">Add New Patient</a>{% endif %}
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="tiles">
-  {% if can(user, P.SUBMISSIONS_SEND) %}
-  <a class="tile tile-orange" href="/send"><span class="ico">&#9993;</span>Send Form to Client</a>{% endif %}
-  {% if can(user, P.SUBMISSIONS_VIEW) %}
-  <a class="tile tile-lime" href="/submissions"><span class="ico">&#128203;</span>See Client Forms</a>{% endif %}
-  {% if can(user, P.CLIENTS_EDIT) %}
-  <a class="tile tile-red" href="/clients"><span class="ico">&#128100;</span>Add New Client</a>{% endif %}
+
+<div class="stats" style="margin-bottom:24px">
+  <div class="stat"><div class="lab">Total Patients</div>
+    <div class="big">{{ total_patients }}</div></div>
+  <div class="stat"><div class="lab">Avg. Patient Experience</div>
+    <div class="big" style="color:{{ 'var(--good)' if avg_experience and avg_experience >= 4
+      else 'var(--bad)' if avg_experience and avg_experience < 3 else 'inherit' }}"
+      >{{ avg_experience if avg_experience is not none else '—' }}{% if avg_experience %} / 5{% endif %}</div></div>
+  <div class="stat"><div class="lab">Today's Appointments</div>
+    <div class="big">{{ todays_appts|length }}</div></div>
+  <div class="stat"><div class="lab">Forms Pending</div>
+    <div class="big">{{ pending|length }}</div></div>
+</div>
+
+<div class="cols" style="margin-bottom:24px">
+  <div class="panel">
+    <h2>&#128200; Forms sent, last 7 days</h2>
+    <div class="body">
+      <div style="display:flex;gap:14px;align-items:flex-end;height:150px;padding:10px 4px 0">
+        {% for day, n in week %}
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+          <div class="hint" style="font-size:12px">{{ n }}</div>
+          <div title="{{ n }} sent on {{ day.strftime('%d %b') }}"
+               style="width:100%;max-width:34px;border-radius:4px 4px 0 0;background:var(--accent);
+                      height:{{ (n / week_peak * 96) | round | int if week_peak else 0 }}px;min-height:2px"></div>
+          <div class="hint" style="font-size:11.5px">{{ day.strftime('%a') }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>&#9673; Screening Status Breakdown</h2>
+    <div class="body">
+      {% if not active_trials %}
+      <p class="hint" style="margin:8px 0">No active trial is recruiting.</p>
+      {% elif active_trials|length > 1 %}
+      <p class="hint" style="margin:8px 0">{{ active_trials|length }} trials are recruiting at
+        once &mdash; see <a href="/trials">Trials</a> for a breakdown of each.</p>
+      {% elif screening.total == 0 %}
+      <p class="hint" style="margin:8px 0">Nobody has been screened against
+        &ldquo;{{ screening.trial.name }}&rdquo; yet.</p>
+      {% else %}
+      <div style="display:flex;gap:22px;align-items:center;padding:6px 0">
+        <div class="donut-wrap">
+          <div class="donut" style="background:{{ screening.gradient }}"></div>
+          <div class="donut-total">{{ screening.total }}</div>
+        </div>
+        <div class="legend">
+          <div><span class="sw" style="background:var(--good)"></span>
+            {{ screening.counts['Looks eligible'] }} Looks eligible</div>
+          <div><span class="sw" style="background:var(--warn)"></span>
+            {{ screening.counts['Needs review'] }} Needs review</div>
+          <div><span class="sw" style="background:var(--bad)"></span>
+            {{ screening.counts['Not eligible'] }} Not eligible</div>
+        </div>
+      </div>
+      <p class="hint" style="margin:10px 0 0">Against &ldquo;{{ screening.trial.name }}&rdquo;
+        &mdash; <a href="/trials/{{ screening.trial.id }}">see the full list</a></p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#128197; Appointments &middot; Today</h2>
+  <div class="body" style="padding:0 22px 18px">
+    <table>
+      <tr><th>Name</th><th>Visit Reason</th><th>Status</th><th>Time</th><th>Provider</th></tr>
+      {% for a in todays_appts %}
+      <tr>
+        <td><a href="/clients/{{ a.client_id }}">{{ a.client.name if a.client else '—' }}</a></td>
+        <td>{{ a.kind }}</td>
+        <td>
+          {% if a.status.value == 'attended' %}<span style="color:var(--good);font-weight:600">attended</span>
+          {% elif a.status.value == 'cancelled' %}<span class="hint">cancelled</span>
+          {% elif a.status.value == 'no show' %}<span style="color:var(--bad);font-weight:600">no show</span>
+          {% else %}<span style="color:var(--warn);font-weight:600">scheduled</span>{% endif %}
+        </td>
+        <td>{{ a.at_time or '—' }}</td>
+        <td>{{ a.provider.name if a.provider else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="hint">Nothing on the calendar for today.</td></tr>
+      {% endfor %}
+    </table>
+    <p class="hint" style="margin-top:10px"><a href="/calendar">Open the full calendar &rsaquo;</a></p>
+  </div>
 </div>
 
 <div class="cols">
@@ -53,14 +147,6 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h2>&#128197; Upcoming Appointments</h2>
-    <div class="body">
-      <div class="empty">&#10003; You have no upcoming appointments.</div>
-      <p class="hint">Scheduling is not part of this build.</p>
-    </div>
-  </div>
-
   {% if can(user, P.EVENTS_VIEW) %}
   <div class="panel">
     <h2>&#9889; Latest Account Events</h2>
@@ -78,9 +164,9 @@
         </tr>
         {% endfor %}
       </table>
-      <p style="text-align:center;margin:12px 0 0"><a href="/events">View All</a></p>
     </div>
   </div>
   {% endif %}
 </div>
+
 {% endblock %}

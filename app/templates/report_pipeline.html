@@ -16,17 +16,17 @@
               letter-spacing:.5px;margin:0 0 8px;font-weight:700">Intake funnel</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
               gap:14px;margin-bottom:24px">
-    <div class="tile"><div class="lab">Patients</div>
+    <div class="stat"><div class="lab">Patients</div>
       <div class="big">{{ total_patients }}</div></div>
-    <div class="tile"><div class="lab">Sent</div>
+    <div class="stat"><div class="lab">Sent</div>
       <div class="big">{{ intake_counts.get('sent', 0) }}</div></div>
-    <div class="tile"><div class="lab">Opened</div>
+    <div class="stat"><div class="lab">Opened</div>
       <div class="big">{{ intake_counts.get('opened', 0) }}</div></div>
-    <div class="tile"><div class="lab">In progress</div>
+    <div class="stat"><div class="lab">In progress</div>
       <div class="big">{{ intake_counts.get('partial', 0) }}</div></div>
-    <div class="tile"><div class="lab">Submitted</div>
+    <div class="stat"><div class="lab">Submitted</div>
       <div class="big" style="color:var(--good)">{{ intake_counts.get('submitted', 0) }}</div></div>
-    <div class="tile"><div class="lab">Reviewed</div>
+    <div class="stat"><div class="lab">Reviewed</div>
       <div class="big">{{ intake_counts.get('reviewed', 0) }}</div></div>
   </div>
 
@@ -59,14 +59,14 @@
               letter-spacing:.5px;margin:0 0 8px;font-weight:700">Patient experience</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
               gap:14px">
-    <div class="tile"><div class="lab">Surveys sent</div>
+    <div class="stat"><div class="lab">Surveys sent</div>
       <div class="big">{{ survey_total }}</div></div>
-    <div class="tile"><div class="lab">Completed</div>
+    <div class="stat"><div class="lab">Completed</div>
       <div class="big">{{ survey_completed }}</div></div>
-    <div class="tile"><div class="lab">Response rate</div>
+    <div class="stat"><div class="lab">Response rate</div>
       <div class="big">{{ '%.0f'|format(survey_completed / survey_total * 100)
         if survey_total else 0 }}%</div></div>
-    <div class="tile"><div class="lab">Average rating</div>
+    <div class="stat"><div class="lab">Average rating</div>
       <div class="big" style="color:{{ 'var(--good)' if avg_rating and avg_rating >= 4
         else 'var(--bad)' if avg_rating and avg_rating < 3 else 'inherit' }}"
         >{{ avg_rating if avg_rating is not none else '—' }}{% if avg_rating %} / 5{% endif %}</div></div>

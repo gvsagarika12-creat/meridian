@@ -93,6 +93,8 @@ a:hover{text-decoration:underline}
 .btn-primary:hover{background:var(--blue-dark)}
 .btn-green{background:var(--green);border-color:var(--green);color:#fff}
 .btn-green:hover{background:var(--green-dark)}
+.btn-red{background:#c0392b;border-color:#c0392b;color:#fff}
+.btn-red:hover{background:#a83224}
 .btn-sm{padding:3px 9px;font-size:12.5px;border-radius:5px}
 
 /* dashboard tiles */
@@ -102,6 +104,26 @@ a:hover{text-decoration:underline}
 .tile:hover{filter:brightness(1.05);text-decoration:none;transform:translateY(-1px)}
 .tile .ico{font-size:26px;display:block;margin-bottom:10px;line-height:1;opacity:.85}
 .tile-orange{background:#8a6a2a} .tile-lime{background:#4e7a52} .tile-red{background:#8f4a43}
+
+/* stat cards - a KPI number on a light card, distinct from the coloured
+   action .tile above (that one is a button; this one is a fact) */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
+.stat{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:16px 18px;box-shadow:0 1px 2px rgba(31,41,51,.04)}
+.stat .lab{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-3);
+  font-weight:700;margin-bottom:7px}
+.stat .big{font-size:27px;font-weight:700;color:var(--ink);line-height:1.15}
+
+/* the screening donut - a conic-gradient ring with the total in the hole,
+   the same "no charting library" choice as the CSS bar chart below */
+.donut{width:132px;height:132px;border-radius:50%;flex:0 0 132px;
+  display:grid;place-items:center}
+.donut::after{content:"";width:78px;height:78px;border-radius:50%;background:var(--surface)}
+.donut-wrap{position:relative;display:inline-flex;flex:0 0 auto}
+.donut-total{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:22px;font-weight:700;color:var(--ink)}
+.legend{display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:8px}
 
 /* panels */
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:22px}

@@ -6,7 +6,7 @@ import json
 import os
 import secrets
 import subprocess
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlencode
@@ -300,9 +300,72 @@ def home(request: Request, db: Session = Depends(get_db)):
     pending = (db.query(Submission).filter_by(status=SubmissionStatus.sent)
                .order_by(Submission.sent_at.desc()).limit(5).all())
     events = db.query(AuditEvent).order_by(AuditEvent.at.desc()).limit(10).all()
+
+    total_patients = db.query(Client).filter_by(archived=False).count()
+
+    today = date.today()
+    todays_appts = (db.query(schedule.Appointment)
+                    .filter(schedule.Appointment.on_day == today)
+                    .options(joinedload(schedule.Appointment.client),
+                             joinedload(schedule.Appointment.provider))
+                    .order_by(schedule.Appointment.at_time).all())
+
+    ratings = [r for (r,) in db.query(ExperienceSurvey.rating_overall)
+              .filter(ExperienceSurvey.rating_overall.isnot(None)).all()]
+    avg_experience = round(sum(ratings) / len(ratings), 1) if ratings else None
+
+    #  Forms sent per day, this week. Bucketed in Python rather than with a
+    #  database date-trunc function - the row count here is never more than a
+    #  practice's weekly intake volume, and staying off a Postgres-specific
+    #  function keeps this query portable.
+    since = datetime.utcnow() - timedelta(days=6)
+    by_day: dict[date, int] = {}
+    for (sent_at,) in db.query(Submission.sent_at).filter(Submission.sent_at >= since).all():
+        if sent_at:
+            d = sent_at.date()
+            by_day[d] = by_day.get(d, 0) + 1
+    week = [((datetime.utcnow() - timedelta(days=i)).date(),
+            by_day.get((datetime.utcnow() - timedelta(days=i)).date(), 0))
+           for i in range(6, -1, -1)]
+    week_peak = max((n for _, n in week), default=0) or 1
+
+    #  The screening donut, same "one active trial or say so" rule
+    #  app/records.py's _screen() already uses for the spreadsheet column.
+    active_trials = db.query(Trial).filter_by(is_active=True).order_by(Trial.name).all()
+    screening = None
+    if len(active_trials) == 1:
+        trial = active_trials[0]
+        clients = (db.query(Client).filter_by(archived=False)
+                   .options(selectinload(Client.medications),
+                            selectinload(Client.submissions_list)
+                            .selectinload(Submission.answers)
+                            .joinedload(Answer.question))
+                   .all())
+        archives = records_for_many(db, (c.hospital_id for c in clients))
+        counts = {"Looks eligible": 0, "Needs review": 0, "Not eligible": 0}
+        for c in clients:
+            v = trials.evaluate(c, trial, archives.get(c.hospital_id or 0, [])).verdict
+            if v in counts:
+                counts[v] += 1
+        total_screened = sum(counts.values())
+        colours = {"Looks eligible": "var(--good)", "Needs review": "var(--warn)",
+                  "Not eligible": "var(--bad)"}
+        stops, acc = [], 0.0
+        for label, n in counts.items():
+            if not n:
+                continue
+            pct = n / total_screened * 100
+            stops.append(f"{colours[label]} {acc:.2f}% {acc + pct:.2f}%")
+            acc += pct
+        gradient = ("conic-gradient(" + ", ".join(stops) + ")") if stops else "conic-gradient(var(--rule) 0% 100%)"
+        screening = {"trial": trial, "counts": counts, "total": total_screened, "gradient": gradient}
+
     return render(
         "dashboard.html",
-        ctx(request, db, received=received, pending=pending, events=events, nav="home"),
+        ctx(request, db, received=received, pending=pending, events=events, nav="home",
+            total_patients=total_patients, todays_appts=todays_appts,
+            avg_experience=avg_experience, week=week, week_peak=week_peak,
+            active_trials=active_trials, screening=screening),
     )
 
 
