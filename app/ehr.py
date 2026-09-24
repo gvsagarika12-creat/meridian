@@ -368,6 +368,13 @@ class Charge(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     note: Mapped[str] = mapped_column(String(255), default="")
 
+    #  This charge's encounter in Tebra, once pushed - see app/tebra.py's
+    #  push_charge(). Same reasoning as Client.tebra_patient_id: checking this
+    #  first is what stops a charge posted twice becoming two encounters
+    #  somebody on Tebra's side has to notice and remove by hand.
+    tebra_encounter_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True)
+
     client: Mapped["Client"] = relationship()                      # noqa: F821
     claims: Mapped[list["Claim"]] = relationship(
         back_populates="charge", cascade="all, delete-orphan",
@@ -569,6 +576,11 @@ class Payment(Base):
 
     posted_by: Mapped[str] = mapped_column(String(160), default="")
     posted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    #  This payment's id in Tebra, once pushed - see app/tebra.py's
+    #  push_payment(). Same dedup reasoning as Charge.tebra_encounter_id.
+    tebra_payment_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True)
 
     client: Mapped["Client"] = relationship()                      # noqa: F821
     charge: Mapped["Charge | None"] = relationship(back_populates="payments")

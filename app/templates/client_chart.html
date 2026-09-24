@@ -449,6 +449,16 @@
             {% else %}<span class="src-tag synced">settled</span>{% endif %}
           </span>
         </div>
+        {% if can(user, P.CLINICAL_EDIT) and client.tebra_patient_id %}
+        <div class="hint" style="margin:0 0 6px 14px">
+          {% if ch.tebra_encounter_id %}
+          <span class="src-tag synced">Tebra encounter {{ ch.tebra_encounter_id }}</span>
+          {% else %}
+          <form class="inline" method="post" action="/charges/{{ ch.id }}/tebra">
+            <button class="btn btn-sm">Push to Tebra</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
 
         {% for cl in ch.claims %}
         <div class="hint" style="margin:0 0 6px 14px">
@@ -507,11 +517,21 @@
               &middot; {{ p.received_on.strftime('%d %b %Y') }}
               {%- if p.reference %} &middot; ref {{ p.reference }}{% endif %}
               {%- if p.posted_by %} &middot; {{ p.posted_by }}{% endif %}</span></span>
+            <span style="display:flex;gap:7px">
+            {% if can(user, P.BILLING_EDIT) and client.tebra_patient_id and p.source.value == 'patient' %}
+              {% if p.tebra_payment_id %}
+              <span class="src-tag synced">Tebra {{ p.tebra_payment_id }}</span>
+              {% else %}
+              <form class="inline" method="post" action="/payments/{{ p.id }}/tebra">
+                <button class="btn btn-sm">Push to Tebra</button></form>
+              {% endif %}
+            {% endif %}
             {% if can(user, P.BILLING_EDIT) %}
             <form class="inline" method="post" action="/payments/{{ p.id }}/delete"
                   onsubmit="return confirm('Remove this payment? The audit log keeps a record.')">
               <button class="btn btn-sm">Remove</button></form>
             {% endif %}
+            </span>
           </div>
           {% endfor %}
         </div>

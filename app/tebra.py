@@ -99,6 +99,25 @@ def fields(**pairs) -> str:
     return "".join(out)
 
 
+def wrap(tag: str, inner: str) -> str:
+    """A nested complex-type element, or nothing if it would be empty.
+
+    Tebra's Encounter and Payment requests nest objects inside objects -
+    `EncounterCreate.Patient` is itself a `PatientIdentifierReq`, not a flat
+    field - which `fields()` alone cannot express. An empty wrapper is omitted
+    the same way `fields()` omits an empty leaf: a `<Hospitalization/>` nobody
+    filled in is not a fact about the encounter.
+    """
+    return f"<kareo:{tag}>{inner}</kareo:{tag}>" if inner else ""
+
+
+def repeated(tag: str, items: list[str]) -> str:
+    """An array element: Tebra's WCF services serialize `ArrayOfX` as the
+    wrapper tag containing one child per item, each named after the item
+    type - `<ServiceLines><ServiceLineReq>...</ServiceLineReq>...</ServiceLines>`."""
+    return f"<kareo:{tag}>{''.join(items)}</kareo:{tag}>" if items else ""
+
+
 def envelope(operation: str, header: dict, body: str) -> bytes:
     """A complete SOAP 1.1 envelope for one operation.
 
@@ -382,6 +401,77 @@ class Tebra:
         xml = self.call("CreateAppointment", body)
         return text_of(xml, "AppointmentId")
 
+    def create_encounter(self, encounter: dict) -> str:
+        """Post a visit and its charges as one encounter. Returns Tebra's EncounterID.
+
+        **This has never run against a live account.** The field names below
+        were read from Tebra's own published XSD (`EncounterCreate`,
+        `ServiceLineReq` and their neighbours), the same standard every other
+        method in this file holds itself to - but the nested/array structure
+        this builds (`fields()` alone cannot express a nested object or a
+        repeated one) follows the conventional WCF serialization for an
+        `ArrayOfX` type, inferred rather than independently confirmed from a
+        real response. Treat the first real call as proof of the wire format,
+        not just the credentials - the same caution the module docstring
+        already asks for elsewhere, doubled here.
+
+        `encounter` keys: practice_id, patient_tebra_id, service_location_id,
+        rendering_provider_tebra_id (optional), service_start, service_end,
+        post_date, status, service_lines (list of dict - see charge_payload).
+        """
+        needed = ("practice_id", "patient_tebra_id", "service_location_id",
+                 "service_start", "post_date", "status", "service_lines")
+        absent = [n for n in needed if not encounter.get(n)]
+        if absent:
+            raise TebraError("Tebra requires these encounter fields: "
+                             + ", ".join(absent))
+
+        lines = [wrap("ServiceLineReq", fields(**line))
+                for line in encounter["service_lines"]]
+
+        provider = wrap("RenderingProvider", fields(
+            ProviderID=encounter.get("rendering_provider_tebra_id")))
+
+        body = wrap("Encounter", (
+            wrap("Practice", fields(PracticeID=encounter["practice_id"]))
+            + wrap("Patient", fields(PatientID=encounter["patient_tebra_id"]))
+            + wrap("ServiceLocation", fields(
+                LocationID=encounter["service_location_id"]))
+            + provider
+            + fields(ServiceStartDate=encounter["service_start"],
+                    ServiceEndDate=encounter.get("service_end")
+                                   or encounter["service_start"],
+                    PostDate=encounter["post_date"],
+                    EncounterStatus=encounter["status"])
+            + repeated("ServiceLines", lines)
+        ))
+        xml = self.call("CreateEncounter", body)
+        return text_of(xml, "EncounterID") or text_of(xml, "EncounterId")
+
+    def create_payment(self, payment: dict) -> str:
+        """Post a payment against a patient's account. Returns Tebra's PaymentID.
+
+        **Never run against a live account** - see `create_encounter`'s
+        caution; the same applies here. `payment` keys: practice_id,
+        patient_tebra_id, amount, method, reference (optional), post_date.
+        """
+        needed = ("practice_id", "patient_tebra_id", "amount", "method", "post_date")
+        absent = [n for n in needed if not payment.get(n)]
+        if absent:
+            raise TebraError("Tebra requires these payment fields: "
+                             + ", ".join(absent))
+
+        body = wrap("Payment", (
+            wrap("Practice", fields(PracticeID=payment["practice_id"]))
+            + wrap("Patient", fields(PatientID=payment["patient_tebra_id"]))
+            + wrap("Payment", fields(
+                AmountPaid=payment["amount"], PaymentMethod=payment["method"],
+                ReferenceNumber=payment.get("reference")))
+            + fields(PostDate=payment["post_date"])
+        ))
+        xml = self.call("CreatePayment", body)
+        return text_of(xml, "PaymentID") or text_of(xml, "PaymentId")
+
 
 # --- mapping our rows onto Tebra's fields ---------------------------------
 #
@@ -433,6 +523,70 @@ def appointment_payload(booking, *, practice_id: str, service_location_id: str,
         "IsRecurring": False,
         "AppointmentName": (booking.kind or "Visit")[:100],
         "Notes": (booking.notes or "")[:500],
+    }
+
+
+def charge_payload(charge) -> dict:
+    """One Meridian Charge as a Tebra ServiceLineReq.
+
+    One line per charge, not one line per visit: the Claim model's own
+    docstring already settled this - "a psychiatric visit is one line almost
+    always" - so a Charge maps to exactly one ServiceLineReq rather than this
+    module inventing a multi-line breakdown Meridian doesn't record.
+    """
+    codes = [c.strip() for c in (charge.icd10 or "").split(",") if c.strip()][:4]
+    return {
+        "ProcedureCode": (charge.cpt or "").strip()[:16],
+        "DiagnosisCode1": codes[0] if len(codes) > 0 else "",
+        "DiagnosisCode2": codes[1] if len(codes) > 1 else "",
+        "DiagnosisCode3": codes[2] if len(codes) > 2 else "",
+        "DiagnosisCode4": codes[3] if len(codes) > 3 else "",
+        "Units": float(charge.units or 1),
+        "UnitCharge": float(charge.amount or 0),
+        "ServiceStartDate": charge.service_on,
+        "ServiceEndDate": charge.service_on,
+        "ExternalID": f"MER-CHG-{charge.id}",
+    }
+
+
+def encounter_payload(client, charge, *, practice_id: str, service_location_id: str,
+                      rendering_provider_tebra_id: str = "") -> dict:
+    """One Meridian Charge as a whole Tebra CreateEncounter request.
+
+    `EncounterStatus` is sent as "Draft" rather than a claim-ready status -
+    guessing the status Tebra's billing team wants a charge to arrive in is
+    exactly the kind of silent-drop risk `esc()`'s DateofBirth comment already
+    warns about elsewhere in this file, and a draft can always be advanced
+    inside Tebra by someone who can see the whole chart, which this app cannot.
+    """
+    return {
+        "practice_id": practice_id,
+        "patient_tebra_id": client.tebra_patient_id,
+        "service_location_id": service_location_id,
+        "rendering_provider_tebra_id": rendering_provider_tebra_id,
+        "service_start": charge.service_on,
+        "service_end": charge.service_on,
+        "post_date": datetime.utcnow(),
+        "status": "Draft",
+        "service_lines": [charge_payload(charge)],
+    }
+
+
+def payment_payload(client, payment, *, practice_id: str) -> dict:
+    """One Meridian Payment as a Tebra CreatePayment request.
+
+    Only patient-sourced payments make sense to push this way - a payer
+    remittance or a contractual adjustment did not come from the patient
+    handing something over, and forcing it through PaymentPatientCreate would
+    misrepresent where the money came from.
+    """
+    return {
+        "practice_id": practice_id,
+        "patient_tebra_id": client.tebra_patient_id,
+        "amount": float(payment.amount or 0),
+        "method": (payment.method or "Other")[:32],
+        "reference": (payment.reference or f"MER-PMT-{payment.id}")[:64],
+        "post_date": datetime.combine(payment.received_on, datetime.min.time()),
     }
 
 
@@ -557,3 +711,53 @@ def push_appointment(db, booking, *, service_location_id: str = "",
     log(db, f"Tebra appointment created: {appointment_id}", "client",
         client.id, user_id=getattr(user, "id", None), ip=ip)
     return appointment_id
+
+
+def push_charge(db, client, charge, *, service_location_id: str = "",
+                rendering_provider_tebra_id: str = "", user=None, ip: str = "") -> str:
+    """Post one Charge to Tebra as an encounter, once.
+
+    Same dedup shape as `push_patient`: the check for an existing id is the
+    whole point, since a charge posted twice is a duplicate encounter Tebra's
+    billing team has to notice and remove by hand.
+    """
+    from .models import log
+
+    if not client.tebra_patient_id:
+        raise TebraError(f"{client.name} has no Tebra chart yet - create the "
+                         f"chart before pushing a charge for them.")
+    if charge.tebra_encounter_id:
+        return charge.tebra_encounter_id
+
+    api = connect(db)
+    location = service_location_id or api.creds.practice_id
+    payload = encounter_payload(
+        client, charge, practice_id=api.creds.practice_id,
+        service_location_id=location,
+        rendering_provider_tebra_id=rendering_provider_tebra_id)
+    encounter_id = api.create_encounter(payload)
+
+    charge.tebra_encounter_id = encounter_id
+    log(db, f"Tebra encounter created for charge {charge.cpt}: {encounter_id}",
+        "client", client.id, user_id=getattr(user, "id", None), ip=ip)
+    return encounter_id
+
+
+def push_payment(db, client, payment, *, user=None, ip: str = "") -> str:
+    """Post one patient-sourced Payment to Tebra, once."""
+    from .models import log
+
+    if not client.tebra_patient_id:
+        raise TebraError(f"{client.name} has no Tebra chart yet - create the "
+                         f"chart before pushing a payment for them.")
+    if payment.tebra_payment_id:
+        return payment.tebra_payment_id
+
+    api = connect(db)
+    payload = payment_payload(client, payment, practice_id=api.creds.practice_id)
+    payment_id = api.create_payment(payload)
+
+    payment.tebra_payment_id = payment_id
+    log(db, f"Tebra payment posted: {payment_id} ({payment.amount})",
+        "client", client.id, user_id=getattr(user, "id", None), ip=ip)
+    return payment_id

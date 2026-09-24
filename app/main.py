@@ -1943,6 +1943,50 @@ def push_client_to_tebra(client_id: int, request: Request,
     return RedirectResponse(f"/clients/{client_id}#tebra", status_code=303)
 
 
+@app.post("/charges/{charge_id}/tebra")
+def push_charge_to_tebra(charge_id: int, request: Request,
+                         db: Session = Depends(get_db),
+                         _=Depends(needs(perms.CLINICAL_EDIT))):
+    """Post this charge to Tebra as an encounter.
+
+    Same permission as pushing the chart itself - billing a visit into
+    another system's ledger is a clinical-financial act, not a front-desk one.
+    """
+    charge = get_or_404(db, ehr.Charge, charge_id)
+    client = get_or_404(db, Client, charge.client_id)
+    user = auth.current_user(request, db)
+    try:
+        new_id = tebra.push_charge(db, client, charge, user=user, ip=client_ip(request))
+        db.commit()
+        request.session["chart_note"] = (
+            f"Charge {charge.cpt} posted to Tebra: {new_id}."
+            + (" (simulated)" if simulation.enabled(db) else ""))
+    except tebra.TebraError as exc:
+        db.rollback()
+        request.session["chart_error"] = str(exc)
+    return RedirectResponse(f"/clients/{client.id}#billing", status_code=303)
+
+
+@app.post("/payments/{payment_id}/tebra")
+def push_payment_to_tebra(payment_id: int, request: Request,
+                          db: Session = Depends(get_db),
+                          _=Depends(needs(perms.BILLING_EDIT))):
+    """Post this patient-sourced payment to Tebra."""
+    payment = get_or_404(db, ehr.Payment, payment_id)
+    client = get_or_404(db, Client, payment.client_id)
+    user = auth.current_user(request, db)
+    try:
+        new_id = tebra.push_payment(db, client, payment, user=user, ip=client_ip(request))
+        db.commit()
+        request.session["chart_note"] = (
+            f"Payment of {payment.amount} posted to Tebra: {new_id}."
+            + (" (simulated)" if simulation.enabled(db) else ""))
+    except tebra.TebraError as exc:
+        db.rollback()
+        request.session["chart_error"] = str(exc)
+    return RedirectResponse(f"/clients/{client.id}#billing", status_code=303)
+
+
 @app.post("/integrations/intakeq/preview")
 def intakeq_preview(request: Request, db: Session = Depends(get_db),
                     _=Depends(needs(perms.INTEGRATIONS_IMPORT))):

@@ -251,6 +251,22 @@ def tebra_response(operation: str, request_xml: str) -> bytes:
         return _soap("CreateAppointmentResult",
                      f"<AppointmentId>APT-{digest}</AppointmentId>")
 
+    if operation == "CreateEncounter":
+        _created.setdefault("encounters", 0)
+        _created["encounters"] += 1
+        digest = hashlib.sha1(
+            (field("PostDate") + field("ProcedureCode")).encode()).hexdigest()[:6].upper()
+        return _soap("CreateEncounterResult",
+                     f"<EncounterID>ENC-{digest}</EncounterID>")
+
+    if operation == "CreatePayment":
+        _created.setdefault("payments", 0)
+        _created["payments"] += 1
+        digest = hashlib.sha1(
+            (field("PostDate") + field("AmountPaid")).encode()).hexdigest()[:6].upper()
+        return _soap("CreatePaymentResult",
+                     f"<PaymentID>PMT-{digest}</PaymentID>")
+
     if operation == "GetPatients":
         rows = "".join(
             f"<PatientData><PatientID>TBR-{4000 + i}</PatientID>"

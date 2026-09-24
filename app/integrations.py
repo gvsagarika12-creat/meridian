@@ -109,9 +109,11 @@ CONNECTIONS = [
         key="tebra",
         editable=True,
         name="Tebra",
-        purpose="Read the clinical chart - medications, diagnoses, past visits - so "
-                "what a patient reports on a form can be checked against what the "
-                "practice already holds.",
+        purpose="Create the patient's chart in Tebra, file documents into it, and "
+                "book appointments - Tebra's own API publishes no clinical read at "
+                "all (no medications, diagnoses, or past visits come back from it, "
+                "ever), so this integration is write-only by the vendor's own design, "
+                "not by a limitation here.",
         settings=[("TEBRA_CUSTOMER_KEY", "Customer key from Tebra support", True),
                   ("TEBRA_USER", "API user, usually an email address", False),
                   ("TEBRA_PASSWORD", "Password for that API user", True)],
