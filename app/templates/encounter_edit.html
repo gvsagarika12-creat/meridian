@@ -29,7 +29,7 @@
       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">
         <label>Date seen
           <input type="date" name="seen_on"
-                 value="{{ (encounter.seen_on if encounter else today).isoformat() }}"></label>
+                 value="{{ (encounter.seen_on if encounter else today()).isoformat() }}"></label>
         <label style="flex:1;min-width:240px">Reason for visit
           <input type="text" name="reason" style="width:100%"
                  value="{{ encounter.reason if encounter else '' }}"
