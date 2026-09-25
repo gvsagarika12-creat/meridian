@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy 2 (declarative, `Mapped`/`mapped_column`), Jinja2 templates, PostgreSQL (via Docker, `ipmg-postgres` container). No frontend build step — templates are server-rendered, styling is the existing `app/static/app.css` classes only.
 
+> **STATUS: all 7 tasks complete (2026-09-25).** Executed inline, not via subagent-driven-development. Commits: `b33047a` (Task 1, expanded per the design spec's Addendum), `8bf585a` (Tasks 2-3 — note the `channel` enum type had to be renamed to `appointment_channel`; `app/broadcasts.py` already had an unrelated `Channel` enum that collided on Postgres's default type-naming), `a637c11` (Tasks 4-7, combined). End-to-end verified against a live test server (login → redirect → render → nav contents → by-doctor links), not just per-task manual steps as originally written.
+
 ## Global Constraints
 
 - **No automated test suite exists in this repository** (confirmed: no `pytest`, no `tests/` directory, only a manual `test-email.py` script). Do not introduce a testing framework as part of this work — that would be unrelated scope. Every task below is verified manually instead: with `psql` against the running `ipmg-postgres` container, `curl` against the running app, and/or the design spec's own testing checklist. This matches the codebase's existing convention of hand-run, idempotent migration scripts with no test harness.
