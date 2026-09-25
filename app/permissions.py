@@ -37,10 +37,6 @@ USERS_MANAGE = "users.manage"
 INTEGRATIONS_IMPORT = "integrations.import"
 PRESCRIBE = "clinical.prescribe"
 BILLING_EDIT = "billing.edit"
-# Split out from CLIENTS_VIEW rather than folded into it: a role can see
-# patients and the calendar without also seeing scanned insurance cards and
-# referral letters, and the receptionist role is exactly that case.
-DOCUMENTS_VIEW = "documents.view"
 
 LABELS = {
     FORMS_VIEW: "See the form library",
@@ -58,10 +54,12 @@ LABELS = {
     INTEGRATIONS_IMPORT: "Import the patient list from IntakeQ",
     PRESCRIBE: "Write and sign prescriptions (prescribers only)",
     BILLING_EDIT: "Code and manage charges",
-    DOCUMENTS_VIEW: "See and file patient documents",
 }
 
 # --- the policy -----------------------------------------------------------
+#
+#                         forms          clients      submissions   events users
+#                    view create edit delete  view edit   view send   view  manage
 ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
     # Deliberately empty. Someone who signed up themselves has not yet been
     # vouched for by anyone, so they get a login and nothing behind it.
@@ -75,7 +73,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
         CLIENTS_VIEW, CLIENTS_EDIT, SCHEDULE_EDIT,
         SUBMISSIONS_VIEW, SUBMISSIONS_SEND,
         EVENTS_VIEW, USERS_MANAGE, INTEGRATIONS_IMPORT,
-        BILLING_EDIT, DOCUMENTS_VIEW,
+        BILLING_EDIT,
     },
     # Runs the system, does not practise medicine. An administrator can reach
     # every screen and every account, and still cannot write a diagnosis - which
@@ -92,27 +90,26 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
         #  Billing yes, prescribing no. An administrator who can
         #  write a prescription is a prescriber, whatever the org
         #  chart says - and this one does not practise medicine.
-        BILLING_EDIT, DOCUMENTS_VIEW,
+        BILLING_EDIT,
     },
     # Clinicians build and read, but do not destroy. Deleting a form that has
     # submissions attached is an administrative act with records consequences.
     UserRole.practitioner: {
         FORMS_VIEW, FORMS_CREATE, FORMS_EDIT,
         CLIENTS_VIEW, CLIENTS_EDIT, CLINICAL_EDIT, SCHEDULE_EDIT,
-        SUBMISSIONS_VIEW, SUBMISSIONS_SEND, PRESCRIBE, DOCUMENTS_VIEW,
+        SUBMISSIONS_VIEW, SUBMISSIONS_SEND, PRESCRIBE,
     },
-    # Receptionist: patients and the calendar, nothing else. Registering
-    # somebody and booking them in is the whole job - forms, submissions,
-    # billing and documents belong to other roles, not because a receptionist
-    # is untrusted with them but because this app should only show a role the
-    # screens its job actually needs.
+    # Front desk runs the day to day: book people in, send their paperwork,
+    # chase what has not come back. No authoring, no deleting.
     UserRole.front_desk: {
+        FORMS_VIEW,
         CLIENTS_VIEW, CLIENTS_EDIT, SCHEDULE_EDIT,
+        SUBMISSIONS_VIEW, SUBMISSIONS_SEND, BILLING_EDIT,
     },
     # Compliance and audit. Sees everything, changes nothing - including the
     # audit log, which is the one thing they are usually here to read.
     UserRole.read_only: {
-        FORMS_VIEW, CLIENTS_VIEW, SUBMISSIONS_VIEW, EVENTS_VIEW, DOCUMENTS_VIEW,
+        FORMS_VIEW, CLIENTS_VIEW, SUBMISSIONS_VIEW, EVENTS_VIEW,
     },
 }
 
@@ -125,7 +122,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
 #  the schema says "practitioner", and neither has to move for the other.
 ROLE_LABEL = {
     "practitioner": "doctor",
-    "front_desk": "Receptionist",
+    "front_desk": "front desk",
     "read_only": "read only",
 }
 

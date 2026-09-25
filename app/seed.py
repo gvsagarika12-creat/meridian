@@ -180,7 +180,7 @@ def seed() -> None:
         User(email="admin@example.com", name="Practice Admin", role=UserRole.admin),
         User(email="clinician@example.com", name="Dr Clinician",
              role=UserRole.practitioner),
-        User(email="coordinator@example.com", name="Receptionist",
+        User(email="coordinator@example.com", name="Research Coordinator",
              role=UserRole.front_desk),
         User(email="compliance@example.com", name="Compliance Auditor",
              role=UserRole.read_only),

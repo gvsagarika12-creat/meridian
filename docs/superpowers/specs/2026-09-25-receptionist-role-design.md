@@ -129,40 +129,6 @@ from the top nav, not just by clicking through from `/reception`.
   a label change, a new column, and a new page; `app/permissions.py`'s
   policy table and `/users` guardrails are untouched.
 
-## Addendum (implemented 2026-09-25): permission trim and demo account rename
-
-After the initial design was approved, the request was narrowed further:
-receptionist should see **only** patients and the calendar — no billing,
-documents, messages, forms, consents, submissions, outbox, broadcasts,
-experience surveys, or the research section (records/archive/trials/
-reports).
-
-Checked what `front_desk`'s existing permission set actually gated in the
-nav (`app/templates/base.html`) and found `FORMS_VIEW`, `SUBMISSIONS_VIEW`,
-`SUBMISSIONS_SEND`, and `BILLING_EDIT` between them covered every one of
-those excluded items. Removing all four from `front_desk` leaves exactly
-`CLIENTS_VIEW`, `CLIENTS_EDIT`, `SCHEDULE_EDIT` — patients and scheduling,
-nothing else.
-
-One item didn't fall out cleanly: **Documents** was gated by `CLIENTS_VIEW`,
-the same permission needed for patients and the calendar, so removing
-`CLIENTS_VIEW` would have taken those away too. Fixed by splitting a new
-`DOCUMENTS_VIEW` permission out of `CLIENTS_VIEW` (`app/permissions.py`),
-granted to `owner`, `admin`, `practitioner`, and `read_only` (preserving
-their current access) but not `front_desk`. The five non-delete document
-routes in `app/main.py` (`documents_list`, `document_upload`, `document_file`,
-`document_file_to`, `document_processed`) and the Documents nav link in
-`app/templates/base.html` now check `DOCUMENTS_VIEW` instead of
-`CLIENTS_VIEW`/`CLIENTS_EDIT`. `document_delete` is unchanged — it was
-already gated on `USERS_MANAGE`, the narrowest permission in the app, which
-this change doesn't touch.
-
-Also: the seeded demo `front_desk` account's display name (`User.name`,
-separate from `role_label()`, which was already becoming "Receptionist" per
-this spec's main body) was "Research Coordinator" — renamed to
-"Receptionist" in both `app/seed.py` (for future fresh installs) and the
-already-seeded row in the running database.
-
 ## Testing
 
 - Migration script runs clean on a fresh DB and is a no-op on a second run.
