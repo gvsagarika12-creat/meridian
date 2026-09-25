@@ -3246,7 +3246,7 @@ def _date_or_none(raw: str):
 @app.get("/documents", response_class=HTMLResponse)
 def documents_list(request: Request, show: str = "unfiled",
                    db: Session = Depends(get_db),
-                   _=Depends(needs(perms.CLIENTS_VIEW))):
+                   _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """The document queue, unfiled first.
 
     Unfiled is the default view because it is the only one that represents
@@ -3274,7 +3274,7 @@ def documents_list(request: Request, show: str = "unfiled",
 
 @app.post("/documents/upload")
 async def document_upload(request: Request, db: Session = Depends(get_db),
-                          _=Depends(needs(perms.CLIENTS_EDIT))):
+                          _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Take a file in, having actually looked at it.
 
     Three checks, in this order and for different reasons: a size cap so one
@@ -3356,7 +3356,7 @@ async def document_upload(request: Request, db: Session = Depends(get_db),
 @app.get("/documents/{doc_id}/file")
 def document_file(doc_id: int, request: Request, download: int = 0,
                   db: Session = Depends(get_db),
-                  _=Depends(needs(perms.CLIENTS_VIEW))):
+                  _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Serve the stored bytes.
 
     Opening a document is a read of protected information and is logged as one.
@@ -3385,7 +3385,7 @@ def document_file(doc_id: int, request: Request, download: int = 0,
 @app.post("/documents/{doc_id}/file-to")
 def document_file_to(doc_id: int, request: Request, client_id: str = F(""),
                      db: Session = Depends(get_db),
-                     _=Depends(needs(perms.CLIENTS_EDIT))):
+                     _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Attach an unfiled document to a patient, or detach it again."""
     doc = get_or_404(db, documents.Document, doc_id)
     me = auth.current_user(request, db)
@@ -3406,7 +3406,7 @@ def document_file_to(doc_id: int, request: Request, client_id: str = F(""),
 @app.post("/documents/{doc_id}/processed")
 def document_processed(doc_id: int, request: Request,
                        db: Session = Depends(get_db),
-                       _=Depends(needs(perms.CLIENTS_EDIT))):
+                       _=Depends(needs(perms.DOCUMENTS_VIEW))):
     doc = get_or_404(db, documents.Document, doc_id)
     me = auth.current_user(request, db)
     doc.processed = not doc.processed
