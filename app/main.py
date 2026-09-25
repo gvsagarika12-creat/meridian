@@ -2394,6 +2394,15 @@ def reception(request: Request, q: str = "", db: Session = Depends(get_db),
                 .options(joinedload(Client.provider))
                 .order_by(Client.last_name, Client.first_name).all())
 
+    #  New registrations land here with no doctor yet - the receptionist's
+    #  actual job on this list is closing that gap, not just viewing it.
+    unassigned = (db.query(Client)
+                  .filter(Client.archived.is_(False), Client.provider_id.is_(None))
+                  .order_by(Client.created_at.desc()).all())
+    doctors = (db.query(User)
+               .filter(User.is_active.is_(True), User.role == UserRole.practitioner)
+               .order_by(User.name).all())
+
     term = q.strip()
     search_results = []
     if term:
@@ -2413,6 +2422,7 @@ def reception(request: Request, q: str = "", db: Session = Depends(get_db),
     db.commit()
     return render("reception.html", ctx(
         request, db, nav="reception", today_appts=today_appts, referred=referred,
+        unassigned=unassigned, doctors=doctors,
         q=term, search_results=search_results, total_patients=total_patients))
 
 

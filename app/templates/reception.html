@@ -13,6 +13,8 @@
     <div class="big">{{ today_appts|length }}</div></div>
   <div class="stat"><div class="lab">Referred Patients</div>
     <div class="big">{{ referred|length }}</div></div>
+  <div class="stat"><div class="lab">Need a Doctor</div>
+    <div class="big" style="color:{{ 'var(--warn)' if unassigned else 'inherit' }}">{{ unassigned|length }}</div></div>
   <div class="stat"><div class="lab">Total Patients</div>
     <div class="big">{{ total_patients }}</div></div>
 </div>
@@ -67,6 +69,36 @@
     </table>
   </div>
 </div>
+
+{% if can(user, P.CLIENTS_EDIT) %}
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#128100; New patients &middot; assign a doctor</h2>
+  <div class="body" style="padding:0 22px 18px">
+    <table>
+      <tr><th>Patient</th><th>Registered</th><th>Assign to</th></tr>
+      {% for c in unassigned %}
+      <tr>
+        <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+        <td>{{ c.created_at.strftime('%d %b') if c.created_at else '—' }}</td>
+        <td>
+          <form method="post" action="/clients/{{ c.id }}/provider"
+                style="display:flex;gap:8px;align-items:center">
+            <input type="hidden" name="back" value="/reception">
+            <select name="provider_id" required>
+              <option value="" disabled selected>Choose a doctor&hellip;</option>
+              {% for d in doctors %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-sm btn-green">Assign</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="hint">Every patient has a doctor assigned. Nothing waiting here.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="panel" style="margin-bottom:24px">
   <h2>&#9878; Referred patients</h2>
