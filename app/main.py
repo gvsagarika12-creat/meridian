@@ -292,6 +292,8 @@ def home(request: Request, db: Session = Depends(get_db)):
     me = auth.current_user(request, db)
     if me and me.role == UserRole.practitioner:
         return RedirectResponse("/my-patients", status_code=303)
+    if me and me.role == UserRole.front_desk:
+        return RedirectResponse("/reception", status_code=303)
 
     received = (db.query(Submission)
                 .filter(Submission.status.in_([SubmissionStatus.submitted,
@@ -2369,6 +2371,31 @@ def archive_record(patient_id: int, request: Request, section: str = "facesheet"
         note=request.session.pop("record_note", "")))
 
 
+@app.get("/reception", response_class=HTMLResponse)
+def reception(request: Request, db: Session = Depends(get_db),
+             _=Depends(needs(perms.CLIENTS_VIEW))):
+    """The receptionist's own home: who is coming in today, a fast way to
+    register somebody new, and which patients have a doctor assigned to
+    them (a referral, in this practice's language)."""
+    today = date.today()
+    today_appts = (db.query(schedule.Appointment)
+                   .filter(schedule.Appointment.on_day == today)
+                   .options(joinedload(schedule.Appointment.client),
+                            joinedload(schedule.Appointment.provider))
+                   .order_by(schedule.Appointment.at_time).all())
+
+    referred = (db.query(Client)
+                .filter(Client.archived.is_(False), Client.provider_id.isnot(None))
+                .options(joinedload(Client.provider))
+                .order_by(Client.last_name, Client.first_name).all())
+
+    log(db, f"Reception desk viewed ({len(today_appts)} today)", "clients",
+        len(today_appts))
+    db.commit()
+    return render("reception.html", ctx(
+        request, db, nav="reception", today_appts=today_appts, referred=referred))
+
+
 @app.get("/my-patients", response_class=HTMLResponse)
 def my_patients(request: Request, provider: int = -1, q: str = "",
                 db: Session = Depends(get_db),
@@ -3246,7 +3273,7 @@ def _date_or_none(raw: str):
 @app.get("/documents", response_class=HTMLResponse)
 def documents_list(request: Request, show: str = "unfiled",
                    db: Session = Depends(get_db),
-                   _=Depends(needs(perms.CLIENTS_VIEW))):
+                   _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """The document queue, unfiled first.
 
     Unfiled is the default view because it is the only one that represents
@@ -3274,7 +3301,7 @@ def documents_list(request: Request, show: str = "unfiled",
 
 @app.post("/documents/upload")
 async def document_upload(request: Request, db: Session = Depends(get_db),
-                          _=Depends(needs(perms.CLIENTS_EDIT))):
+                          _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Take a file in, having actually looked at it.
 
     Three checks, in this order and for different reasons: a size cap so one
@@ -3356,7 +3383,7 @@ async def document_upload(request: Request, db: Session = Depends(get_db),
 @app.get("/documents/{doc_id}/file")
 def document_file(doc_id: int, request: Request, download: int = 0,
                   db: Session = Depends(get_db),
-                  _=Depends(needs(perms.CLIENTS_VIEW))):
+                  _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Serve the stored bytes.
 
     Opening a document is a read of protected information and is logged as one.
@@ -3385,7 +3412,7 @@ def document_file(doc_id: int, request: Request, download: int = 0,
 @app.post("/documents/{doc_id}/file-to")
 def document_file_to(doc_id: int, request: Request, client_id: str = F(""),
                      db: Session = Depends(get_db),
-                     _=Depends(needs(perms.CLIENTS_EDIT))):
+                     _=Depends(needs(perms.DOCUMENTS_VIEW))):
     """Attach an unfiled document to a patient, or detach it again."""
     doc = get_or_404(db, documents.Document, doc_id)
     me = auth.current_user(request, db)
@@ -3406,7 +3433,7 @@ def document_file_to(doc_id: int, request: Request, client_id: str = F(""),
 @app.post("/documents/{doc_id}/processed")
 def document_processed(doc_id: int, request: Request,
                        db: Session = Depends(get_db),
-                       _=Depends(needs(perms.CLIENTS_EDIT))):
+                       _=Depends(needs(perms.DOCUMENTS_VIEW))):
     doc = get_or_404(db, documents.Document, doc_id)
     me = auth.current_user(request, db)
     doc.processed = not doc.processed

@@ -28,6 +28,8 @@
     <a href="/consents" class="{{ 'on' if nav=='consents' }}"><i>✎</i>Consents</a>{% endif %}
     {% if can(user, P.CLINICAL_EDIT) %}
     <a href="/my-patients" class="{{ 'on' if nav=='mypatients' }}"><i>✚</i>My Patients</a>{% endif %}
+    {% if user and user.role.value == 'front_desk' %}
+    <a href="/reception" class="{{ 'on' if nav=='reception' }}"><i>&#127973;</i>Reception</a>{% endif %}
     {% if can(user, P.CLIENTS_VIEW) %}
     <a href="/clients" class="{{ 'on' if nav=='clients' }}"><i>☺</i>All Patients</a>{% endif %}
     {% if can(user, P.SUBMISSIONS_VIEW) %}
@@ -42,7 +44,7 @@
 
     {% if can(user, P.BILLING_EDIT) %}
     <a href="/billing" class="{{ 'on' if nav=='billing' }}"><i>&#128179;</i>Billing</a>{% endif %}
-    {% if can(user, P.CLIENTS_VIEW) %}
+    {% if can(user, P.DOCUMENTS_VIEW) %}
     <a href="/documents" class="{{ 'on' if nav=='documents' }}"><i>&#128206;</i>Documents
       {% if unfiled_docs %}<b class="count">{{ unfiled_docs }}</b>{% endif %}</a>{% endif %}
     {% if can(user, P.CLINICAL_EDIT) %}
