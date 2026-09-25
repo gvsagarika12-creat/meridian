@@ -26,10 +26,8 @@
     {% if can(user, P.FORMS_VIEW) %}
     <a href="/forms" class="{{ 'on' if nav=='forms' }}"><i>❐</i>Forms</a>
     <a href="/consents" class="{{ 'on' if nav=='consents' }}"><i>✎</i>Consents</a>{% endif %}
-    {% if can(user, P.CLINICAL_EDIT) or (user and user.role.value == 'front_desk') %}
+    {% if can(user, P.CLINICAL_EDIT) %}
     <a href="/my-patients" class="{{ 'on' if nav=='mypatients' }}"><i>✚</i>My Patients</a>{% endif %}
-    {% if user and user.role.value == 'front_desk' %}
-    <a href="/reception" class="{{ 'on' if nav=='reception' }}"><i>&#127973;</i>Reception</a>{% endif %}
     {% if can(user, P.CLIENTS_VIEW) %}
     <a href="/clients" class="{{ 'on' if nav=='clients' }}"><i>☺</i>All Patients</a>{% endif %}
     {% if can(user, P.SUBMISSIONS_VIEW) %}
