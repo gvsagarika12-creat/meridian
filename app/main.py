@@ -2081,7 +2081,6 @@ def calendar_view(request: Request, year: int = 0, month: int = 0,
 def calendar_book(request: Request, client_id: int = F(...), on_day: str = F(""),
                   at_time: str = F(""), minutes: str = F("30"),
                   kind: str = F("Screening visit"), provider_id: str = F(""),
-                  channel: str = F("in_person"),
                   location: str = F(""), notes: str = F(""),
                   db: Session = Depends(get_db),
                   _=Depends(needs(perms.SCHEDULE_EDIT))):
@@ -2090,15 +2089,11 @@ def calendar_book(request: Request, client_id: int = F(...), on_day: str = F("")
         request.session["calendar_error"] = "Pick a date for the appointment."
         return RedirectResponse("/calendar", status_code=303)
     client = get_or_404(db, Client, client_id)
-    try:
-        appt_channel = schedule.AppointmentChannel(channel)
-    except ValueError:
-        appt_channel = schedule.AppointmentChannel.in_person
     booking = schedule.Appointment(
         client_id=client.id, on_day=day, at_time=at_time.strip()[:5],
         minutes=_int_or_none(minutes) or 30, kind=kind.strip() or "Screening visit",
-        provider_id=_int_or_none(provider_id), channel=appt_channel,
-        location=location.strip(), notes=notes.strip())
+        provider_id=_int_or_none(provider_id), location=location.strip(),
+        notes=notes.strip())
     db.add(booking)
     cache.drop_nav()
     log(db, f"Appointment booked ({day:%d %b})", "client", client.id)

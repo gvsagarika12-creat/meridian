@@ -34,19 +34,6 @@ class Attendance(str, enum.Enum):
     no_show = "no show"
 
 
-class AppointmentChannel(str, enum.Enum):
-    """How the visit happens - separate from `kind`, which is what the visit
-    is for. A Follow-up can be either; conflating the two would mean losing
-    one fact to record the other.
-
-    Not named Channel: app/broadcasts.py already has a Channel enum (email /
-    sms / both) for message delivery, and SQLAlchemy names a Postgres enum
-    type after the Python class by default - two classes both called Channel
-    would both want a type literally named "channel"."""
-    in_person = "in_person"
-    online = "online"
-
-
 KINDS = ["Screening visit", "Consultation", "Follow-up", "Trial visit",
          "Telehealth", "Assessment", "Other"]
 
@@ -72,9 +59,6 @@ class Appointment(Base):
     minutes: Mapped[int] = mapped_column(Integer, default=30)
 
     kind: Mapped[str] = mapped_column(String(64), default="Screening visit")
-    channel: Mapped[AppointmentChannel] = mapped_column(
-        Enum(AppointmentChannel, name="appointment_channel"),
-        default=AppointmentChannel.in_person)
     location: Mapped[str] = mapped_column(String(128), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[Attendance] = mapped_column(Enum(Attendance),
