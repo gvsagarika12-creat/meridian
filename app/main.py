@@ -2421,7 +2421,7 @@ def reception(request: Request, q: str = "", db: Session = Depends(get_db),
         len(today_appts))
     db.commit()
     return render("reception.html", ctx(
-        request, db, nav="reception", today_appts=today_appts, referred=referred,
+        request, db, nav="home", today_appts=today_appts, referred=referred,
         unassigned=unassigned, doctors=doctors,
         q=term, search_results=search_results, total_patients=total_patients))
 
