@@ -8,6 +8,42 @@
 
 {% block content %}
 
+<div class="stats" style="margin-bottom:24px">
+  <div class="stat"><div class="lab">Today's Appointments</div>
+    <div class="big">{{ today_appts|length }}</div></div>
+  <div class="stat"><div class="lab">Referred Patients</div>
+    <div class="big">{{ referred|length }}</div></div>
+  <div class="stat"><div class="lab">Total Patients</div>
+    <div class="big">{{ total_patients }}</div></div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#128269; Find a patient</h2>
+  <div class="body">
+    <form method="get" action="/reception"
+          style="display:flex;gap:10px;align-items:center">
+      <input type="text" name="q" value="{{ q }}" placeholder="Search by name"
+             style="flex:1;max-width:360px">
+      <button class="btn btn-sm">Search</button>
+      {% if q %}<a class="btn btn-sm" href="/reception">Clear</a>{% endif %}
+    </form>
+    {% if q %}
+    <table style="margin-top:14px">
+      <tr><th>Name</th><th>Doctor</th><th></th></tr>
+      {% for c in search_results %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.provider.name if c.provider else '—' }}</td>
+        <td><a class="btn btn-sm" href="/clients/{{ c.id }}">Open chart &rarr;</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="hint">No patient matches "{{ q }}".</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </div>
+</div>
+
 <div class="panel" style="margin-bottom:24px">
   <h2>&#128197; Today's patients</h2>
   <div class="body" style="padding:0 22px 18px">
@@ -36,14 +72,15 @@
   <h2>&#9878; Referred patients</h2>
   <div class="body" style="padding:0 22px 18px">
     <table>
-      <tr><th>Patient</th><th>Referred by</th></tr>
+      <tr><th>Patient</th><th>Referred by</th><th></th></tr>
       {% for c in referred %}
       <tr>
-        <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+        <td>{{ c.name }}</td>
         <td>{{ c.provider.name if c.provider else '—' }}</td>
+        <td><a class="btn btn-sm" href="/clients/{{ c.id }}">Open chart &rarr;</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="2" class="hint">No patients have a doctor assigned yet.</td></tr>
+      <tr><td colspan="3" class="hint">No patients have a doctor assigned yet.</td></tr>
       {% endfor %}
     </table>
   </div>
@@ -75,6 +112,9 @@
         <button class="btn btn-green" style="margin-left:auto">Add patient</button>
       </div>
     </form>
+    <p class="hint" style="margin-top:12px">
+      After saving, you'll land straight on the new patient's chart. To find
+      them again later, use Find a patient above.</p>
   </div>
 </div>
 {% endif %}

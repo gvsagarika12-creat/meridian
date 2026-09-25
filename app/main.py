@@ -2372,11 +2372,16 @@ def archive_record(patient_id: int, request: Request, section: str = "facesheet"
 
 
 @app.get("/reception", response_class=HTMLResponse)
-def reception(request: Request, db: Session = Depends(get_db),
+def reception(request: Request, q: str = "", db: Session = Depends(get_db),
              _=Depends(needs(perms.CLIENTS_VIEW))):
     """The receptionist's own home: who is coming in today, a fast way to
     register somebody new, and which patients have a doctor assigned to
-    them (a referral, in this practice's language)."""
+    them (a referral, in this practice's language).
+
+    Also the only way this role can find a patient again after registering
+    them - there is no full patient list on this role's nav, so a name
+    search has to live right here or a freshly-added patient becomes
+    unreachable the moment staff click away from their new chart page."""
     today = date.today()
     today_appts = (db.query(schedule.Appointment)
                    .filter(schedule.Appointment.on_day == today)
@@ -2389,11 +2394,26 @@ def reception(request: Request, db: Session = Depends(get_db),
                 .options(joinedload(Client.provider))
                 .order_by(Client.last_name, Client.first_name).all())
 
+    term = q.strip()
+    search_results = []
+    if term:
+        like = f"%{term}%"
+        search_results = (db.query(Client)
+                          .filter(Client.archived.is_(False),
+                                  (Client.first_name + " " + Client.last_name).ilike(like)
+                                  | Client.first_name.ilike(like)
+                                  | Client.last_name.ilike(like))
+                          .order_by(Client.last_name, Client.first_name)
+                          .limit(25).all())
+
+    total_patients = db.query(Client).filter_by(archived=False).count()
+
     log(db, f"Reception desk viewed ({len(today_appts)} today)", "clients",
         len(today_appts))
     db.commit()
     return render("reception.html", ctx(
-        request, db, nav="reception", today_appts=today_appts, referred=referred))
+        request, db, nav="reception", today_appts=today_appts, referred=referred,
+        q=term, search_results=search_results, total_patients=total_patients))
 
 
 @app.get("/my-patients", response_class=HTMLResponse)
