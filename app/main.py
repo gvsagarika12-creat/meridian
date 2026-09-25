@@ -292,6 +292,8 @@ def home(request: Request, db: Session = Depends(get_db)):
     me = auth.current_user(request, db)
     if me and me.role == UserRole.practitioner:
         return RedirectResponse("/my-patients", status_code=303)
+    if me and me.role == UserRole.front_desk:
+        return RedirectResponse("/reception", status_code=303)
 
     received = (db.query(Submission)
                 .filter(Submission.status.in_([SubmissionStatus.submitted,
@@ -2372,6 +2374,39 @@ def archive_record(patient_id: int, request: Request, section: str = "facesheet"
                        if client else []),
         default_vaccines=clinical.ADULT_VACCINES,
         note=request.session.pop("record_note", "")))
+
+
+@app.get("/reception", response_class=HTMLResponse)
+def reception(request: Request, db: Session = Depends(get_db),
+             _=Depends(needs(perms.CLIENTS_VIEW))):
+    """The receptionist's own home: who is coming in today, a fast way to
+    register somebody new, and each doctor's patient list for routing.
+
+    Same idea as /my-patients being a clinician's home instead of the
+    practice-wide dashboard - the receptionist's first question is "who is
+    walking in today", not "how is the practice doing this week"."""
+    today = date.today()
+    today_appts = (db.query(schedule.Appointment)
+                   .filter(schedule.Appointment.on_day == today)
+                   .options(joinedload(schedule.Appointment.client),
+                            joinedload(schedule.Appointment.provider))
+                   .order_by(schedule.Appointment.at_time).all())
+
+    doctors = (db.query(User)
+               .filter(User.is_active.is_(True), User.role == UserRole.practitioner)
+               .order_by(User.name).all())
+    counts = dict(db.query(Client.provider_id, func.count(Client.id))
+                  .filter(Client.archived.is_(False), Client.provider_id.isnot(None))
+                  .group_by(Client.provider_id).all())
+    unassigned_count = (db.query(Client)
+                        .filter_by(archived=False, provider_id=None).count())
+
+    log(db, f"Reception desk viewed ({len(today_appts)} today)", "clients",
+        len(today_appts))
+    db.commit()
+    return render("reception.html", ctx(
+        request, db, nav="reception", today_appts=today_appts,
+        doctors=doctors, doctor_counts=counts, unassigned_count=unassigned_count))
 
 
 @app.get("/my-patients", response_class=HTMLResponse)

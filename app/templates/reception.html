@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Reception{% endblock %}
+{% block chrome %}
+<div class="crumb">
+  <div>Hello, {{ user.name if user else 'there' }}!</div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#128197; Today's patients</h2>
+  <div class="body" style="padding:0 22px 18px">
+    <table>
+      <tr><th>Time</th><th>Name</th><th>Doctor</th><th>Channel</th><th>Status</th></tr>
+      {% for a in today_appts %}
+      <tr>
+        <td>{{ a.at_time or '—' }}</td>
+        <td><a href="/clients/{{ a.client_id }}">{{ a.client.name if a.client else '—' }}</a></td>
+        <td>{{ a.provider.name if a.provider else '—' }}</td>
+        <td>
+          {% if a.channel.value == 'online' %}<span style="color:var(--accent);font-weight:600">Online</span>
+          {% else %}<span class="hint">In person</span>{% endif %}
+        </td>
+        <td>
+          {% if a.status.value == 'attended' %}<span style="color:var(--good);font-weight:600">attended</span>
+          {% elif a.status.value == 'cancelled' %}<span class="hint">cancelled</span>
+          {% elif a.status.value == 'no show' %}<span style="color:var(--bad);font-weight:600">no show</span>
+          {% else %}<span style="color:var(--warn);font-weight:600">scheduled</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="hint">Nobody on the calendar for today.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#9878; Cases by doctor</h2>
+  <div class="body" style="padding:0 22px 18px">
+    <table>
+      <tr><th>Doctor</th><th>Patients</th><th></th></tr>
+      {% for d in doctors %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td>{{ doctor_counts.get(d.id, 0) }}</td>
+        <td><a class="btn btn-sm" href="/my-patients?provider={{ d.id }}">View list &rarr;</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="hint">No doctors on staff yet.</td></tr>
+      {% endfor %}
+      <tr>
+        <td>Unassigned</td>
+        <td>{{ unassigned_count }}</td>
+        <td><a class="btn btn-sm" href="/my-patients?provider=-2">View list &rarr;</a></td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+{% if can(user, P.CLIENTS_EDIT) %}
+<div class="panel" style="margin-bottom:24px">
+  <h2>&#10010; Register a new patient</h2>
+  <div class="body">
+    <form method="post" action="/clients/new"
+          style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+                 gap:13px;align-items:end">
+      <label>First name<input type="text" name="first_name" required></label>
+      <label>Last name<input type="text" name="last_name"></label>
+      <label>Date of birth<input type="date" name="dob"></label>
+      <label>Email<input type="email" name="email"></label>
+      <label>Phone<input type="text" name="phone" placeholder="(909) 555-0100"></label>
+      <label>Hospital ID<input type="text" name="hospital_id" inputmode="numeric"
+             placeholder="e.g. 1097"></label>
+
+      <div style="grid-column:1 / -1;display:flex;gap:22px;flex-wrap:wrap;
+                  border-top:1px solid var(--rule);padding-top:13px;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="allow_email" value="1">
+          Consents to email contact</label>
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="allow_sms" value="1">
+          Consents to SMS contact</label>
+        <button class="btn btn-green" style="margin-left:auto">Add patient</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
