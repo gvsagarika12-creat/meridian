@@ -51,7 +51,7 @@
             {% for a in appts %}
             <a class="ap {{ a.status.value | replace(' ','-') }}"
                href="/clients/{{ a.client_id }}"
-               title="{{ a.kind }}{{ ' · ' ~ a.location if a.location }}{{ ' · ' ~ a.notes if a.notes }}">
+               title="{{ a.kind }} ({{ 'online' if a.channel.value == 'online' else 'in person' }}){{ ' · ' ~ a.location if a.location }}{{ ' · ' ~ a.notes if a.notes }}">
               {%- if a.at_time %}<b>{{ a.at_time }}</b> {% endif -%}
               {{ a.client.first_name }} {{ a.client.last_name[:1] }}
             </a>
@@ -80,6 +80,11 @@
           <label>Kind
             <select name="kind">
               {% for k in kinds %}<option>{{ k }}</option>{% endfor %}
+            </select></label>
+          <label>Channel
+            <select name="channel">
+              <option value="in_person">In person</option>
+              <option value="online">Online</option>
             </select></label>
           <label>Provider
             <select name="provider_id">
